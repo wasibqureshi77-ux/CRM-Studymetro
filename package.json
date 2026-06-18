@@ -1,0 +1,20 @@
+{
+  "name": "study-metro-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Study Metro CRM & Analytics Platform Monorepo",
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build:api": "npm run build -w apps/api",
+    "build:web": "npm run build -w apps/web",
+    "prisma:generate": "npm run prisma:generate -w apps/api",
+    "prisma:push": "npm run prisma:push -w apps/api",
+    "prisma:migrate": "npm run prisma:migrate -w apps/api",
+    "prisma:seed": "npx -w apps/api prisma db seed"
+  }
+}

@@ -1,0 +1,241 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { api } from '../../../lib/api';
+
+export default function DocumentsPage() {
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  // Rejection modal state
+  const [rejectionDocId, setRejectionDocId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchDocuments = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/v1/documents');
+      setDocuments(res || []);
+    } catch (err: any) {
+      console.error('Failed to load documents', err);
+      setErrorMsg(err.message || 'Failed to load documents registry.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDocuments();
+  }, []);
+
+  const handleApprove = async (docId: string) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await api.patch(`/api/v1/documents/${docId}/approve`, {
+        status: 'APPROVED'
+      });
+      setSuccessMsg('Document successfully approved.');
+      await fetchDocuments();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to approve document.');
+    }
+  };
+
+  const handleRejectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectionDocId || !rejectionReason.trim()) {
+      setErrorMsg('Rejection reason is required.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await api.patch(`/api/v1/documents/${rejectionDocId}/approve`, {
+        status: 'REJECTED',
+        rejectionReason: rejectionReason
+      });
+      setSuccessMsg('Document successfully rejected.');
+      setRejectionDocId(null);
+      setRejectionReason('');
+      await fetchDocuments();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to reject document.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      window.open(url, '_blank');
+    }
+  };
+
+  return (
+    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div>
+        <h2 style={{ fontSize: '15px', fontWeight: 700 }}>Documents Verification Registry</h2>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+          Review, approve, or reject student documentation uploads for applications.
+        </p>
+      </div>
+
+      {(errorMsg || successMsg) && (
+        <div>
+          {errorMsg && (
+            <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '8px 12px', borderRadius: '4px', fontSize: '11px', marginBottom: '8px' }}>
+              ⚠️ {errorMsg}
+            </div>
+          )}
+          {successMsg && (
+            <div style={{ backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '8px 12px', borderRadius: '4px', fontSize: '11px', marginBottom: '8px' }}>
+              ✓ {successMsg}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="table-container" style={{ margin: 0 }}>
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center', fontWeight: 600 }}>
+            Querying documents database...
+          </div>
+        ) : documents.length === 0 ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            No documents found in the database.
+          </div>
+        ) : (
+          <table className="dense-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Document Type</th>
+                <th>File details</th>
+                <th>Status</th>
+                <th>Uploaded Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {documents.map((doc) => (
+                <tr key={doc.id}>
+                  <td>
+                    {doc.lead ? (
+                      <a href={`/dashboard/leads/${doc.lead.id}`} style={{ color: 'var(--primary-color)', fontWeight: 600, textDecoration: 'none' }}>
+                        {doc.lead.firstName} {doc.lead.lastName || ''}
+                      </a>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Unknown</span>
+                    )}
+                  </td>
+                  <td>
+                    <strong>{doc.type}</strong>
+                  </td>
+                  <td>
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>{doc.fileName}</span>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                      {(doc.fileSize / 1024).toFixed(1)} KB
+                    </div>
+                  </td>
+                  <td>
+                    <span
+                      className="badge"
+                      style={{
+                        backgroundColor:
+                          doc.status === 'APPROVED' ? '#dcfce7' : doc.status === 'REJECTED' ? '#fee2e2' : '#fef9c3',
+                        color:
+                          doc.status === 'APPROVED' ? '#166534' : doc.status === 'REJECTED' ? '#991b1b' : '#854d0e',
+                      }}
+                    >
+                      {doc.status}
+                    </span>
+                    {doc.rejectionReason && (
+                      <div style={{ fontSize: '10px', color: 'var(--danger-color)', marginTop: '2px', fontStyle: 'italic' }}>
+                        Reason: {doc.rejectionReason}
+                      </div>
+                    )}
+                  </td>
+                  <td>{new Date(doc.createdAt).toLocaleString()}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ textDecoration: 'none' }}>
+                        👁️ View
+                      </a>
+                      <button onClick={() => handleDownload(doc.fileUrl, doc.fileName)} className="btn btn-sm">
+                        📥 Download
+                      </button>
+                      {doc.status === 'PENDING' && (
+                        <>
+                          <button
+                            onClick={() => handleApprove(doc.id)}
+                            className="btn btn-sm"
+                            style={{ backgroundColor: 'var(--success-color)', color: '#fff', borderColor: 'var(--success-color)' }}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => setRejectionDocId(doc.id)}
+                            className="btn btn-sm btn-danger"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Rejection Reason popup modal */}
+      {rejectionDocId && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <form onSubmit={handleRejectSubmit} style={{ backgroundColor: '#fff', borderRadius: '4px', border: '1px solid var(--border-color)', padding: '20px', width: '400px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0, borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Reject Document</h3>
+            
+            <div className="form-group">
+              <label>Rejection Reason *</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                required
+                placeholder="Specify the reason (e.g. low resolution, blurred bio page, expired visa etc.)..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+              <button type="button" className="btn" disabled={isSubmitting} onClick={() => { setRejectionDocId(null); setRejectionReason(''); }}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-danger" disabled={isSubmitting}>
+                {isSubmitting ? 'Rejecting...' : 'Reject Document'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}

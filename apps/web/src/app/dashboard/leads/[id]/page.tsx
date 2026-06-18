@@ -1,0 +1,833 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { api } from '../../../../lib/api';
+import { useAuth } from '../../../../context/auth-context';
+
+export default function LeadDetailPage() {
+  const { id } = useParams();
+  const { hasPermission } = useAuth();
+  const router = useRouter();
+
+  const [lead, setLead] = useState<any>(null);
+  const [timeline, setTimeline] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Form states
+  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups'>('timeline');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Note State
+  const [noteContent, setNoteContent] = useState('');
+
+  // Followup State
+  const [followupDate, setFollowupDate] = useState('');
+  const [followupNotes, setFollowupNotes] = useState('');
+
+  // Document Upload Mock State
+  const [uploadType, setUploadType] = useState('PASSPORT');
+  const [uploadFileName, setUploadFileName] = useState('');
+  const [uploadFileSize, setUploadFileSize] = useState(1048576); // default 1MB
+
+  // Document Rejection Reason Dialog State
+  const [rejectionDocId, setRejectionDocId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+
+  const loadAllData = async () => {
+    try {
+      const [leadData, timelineData, usersData, branchesData] = await Promise.all([
+        api.get(`/api/v1/leads/${id}`),
+        api.get(`/api/v1/leads/${id}/timeline`),
+        api.get('/api/v1/leads/meta/users'),
+        api.get('/api/v1/leads/meta/branches'),
+      ]);
+      setLead(leadData);
+      setTimeline(timelineData || []);
+      setUsers(usersData || []);
+      setBranches(branchesData || []);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to load details.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (id) {
+      loadAllData();
+    }
+  }, [id]);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const updated = await api.patch(`/api/v1/leads/${id}`, {
+        firstName: lead.firstName,
+        lastName: lead.lastName,
+        email: lead.email,
+        phone: lead.phone,
+        status: lead.status,
+        source: lead.source,
+        studentProfile: {
+          targetCountry: lead.studentProfile?.targetCountry || undefined,
+          targetCourse: lead.studentProfile?.targetCourse || undefined,
+          intake: lead.studentProfile?.intake || undefined,
+          ieltsStatus: lead.studentProfile?.ieltsStatus || 'NOT_TAKEN',
+          passportStatus: lead.studentProfile?.passportStatus || 'NO_PASSPORT',
+          educationLevel: lead.studentProfile?.educationLevel || undefined,
+          percentageGpa: lead.studentProfile?.percentageGpa || undefined,
+          budget: lead.studentProfile?.budget || undefined,
+          currentQualification: lead.studentProfile?.currentQualification || undefined,
+        },
+      });
+      setSuccessMsg('Candidate record updated successfully.');
+      setLead(updated);
+      // Refresh timeline to reflect activities
+      const tl = await api.get(`/api/v1/leads/${id}/timeline`);
+      setTimeline(tl || []);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Update failed.');
+    }
+  };
+
+  const handleAssignChange = async (assigneeId: string) => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      await api.patch(`/api/v1/leads/${id}/assign`, {
+        assigneeId: assigneeId || null,
+        branchId: lead.branchId,
+      });
+      setSuccessMsg('Lead assignee updated.');
+      loadAllData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Assignment failed.');
+    }
+  };
+
+  const handleBranchChange = async (branchId: string) => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      await api.patch(`/api/v1/leads/${id}/assign`, {
+        assigneeId: lead.assigneeId,
+        branchId: branchId || null,
+      });
+      setSuccessMsg('Lead branch scope updated.');
+      loadAllData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Branch update failed.');
+    }
+  };
+
+  // Add Note
+  const handleAddNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!noteContent.trim()) return;
+    setErrorMsg(null);
+    try {
+      await api.post(`/api/v1/leads/${id}/notes`, { content: noteContent });
+      setNoteContent('');
+      setSuccessMsg('Note added successfully.');
+      loadAllData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Add note failed.');
+    }
+  };
+
+  // Schedule Followup
+  const handleScheduleFollowup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!followupDate) {
+      setErrorMsg('Please select a date/time.');
+      return;
+    }
+    setErrorMsg(null);
+    try {
+      await api.post('/api/v1/followups', {
+        leadId: id,
+        followupDate: new Date(followupDate).toISOString(),
+        notes: followupNotes,
+      });
+      setFollowupDate('');
+      setFollowupNotes('');
+      setSuccessMsg('Followup scheduled successfully.');
+      loadAllData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to schedule followup.');
+    }
+  };
+
+  // Upload Document Simulation
+  const handleDocumentUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFileName.trim()) {
+      setErrorMsg('Please enter a mock file name.');
+      return;
+    }
+    setErrorMsg(null);
+    try {
+      // 1. Get presigned R2 Url
+      const uploadRes = await api.post('/api/v1/documents/upload', {
+        leadId: id,
+        type: uploadType,
+        fileName: uploadFileName,
+        fileSize: Number(uploadFileSize),
+      });
+
+      // 2. Alert and reload
+      setSuccessMsg(`Simulated upload to R2 storage for key: ${uploadRes.document.fileName}`);
+      setUploadFileName('');
+      loadAllData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Document upload request failed.');
+    }
+  };
+
+  // Approve Document
+  const handleApproveDocument = async (docId: string) => {
+    setErrorMsg(null);
+    try {
+      await api.patch(`/api/v1/documents/${docId}/approve`, {
+        status: 'APPROVED',
+      });
+      setSuccessMsg('Document marked as APPROVED.');
+      loadAllData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Approval action failed.');
+    }
+  };
+
+  // Reject Document
+  const handleRejectDocument = async () => {
+    if (!rejectionDocId || !rejectionReason.trim()) return;
+    setErrorMsg(null);
+    try {
+      await api.patch(`/api/v1/documents/${rejectionDocId}/approve`, {
+        status: 'REJECTED',
+        rejectionReason: rejectionReason,
+      });
+      setSuccessMsg('Document marked as REJECTED.');
+      setRejectionDocId(null);
+      setRejectionReason('');
+      loadAllData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Rejection action failed.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ padding: '20px', fontWeight: 600 }}>
+        Querying candidate database records...
+      </div>
+    );
+  }
+
+  if (!lead) {
+    return (
+      <div style={{ padding: '20px', color: 'var(--danger-color)' }}>
+        Lead not found or access unauthorized.
+      </div>
+    );
+  }
+
+  return (
+    <div className="split-container">
+      {/* LEFT PANE: Editable Student Details */}
+      <section className="split-left">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+          <h3 style={{ fontSize: '13px', fontWeight: 700 }}>Student Information Profile</h3>
+          <button onClick={() => router.push('/dashboard/leads')} className="btn btn-sm">
+            ← Back to List
+          </button>
+        </div>
+
+        {/* Action responses */}
+        {errorMsg && (
+          <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '8px 12px', borderRadius: '4px', fontSize: '11px' }}>
+            ⚠️ {errorMsg}
+          </div>
+        )}
+        {successMsg && (
+          <div style={{ backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '8px 12px', borderRadius: '4px', fontSize: '11px' }}>
+            ✓ {successMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ fontWeight: 700, fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            Personal Administrative Info
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>First Name</label>
+              <input
+                type="text"
+                className="form-control"
+                value={lead.firstName || ''}
+                onChange={(e) => setLead({ ...lead, firstName: e.target.value })}
+              />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Last Name</label>
+              <input
+                type="text"
+                className="form-control"
+                value={lead.lastName || ''}
+                onChange={(e) => setLead({ ...lead, lastName: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Email</label>
+              <input
+                type="email"
+                className="form-control"
+                value={lead.email || ''}
+                onChange={(e) => setLead({ ...lead, email: e.target.value })}
+              />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Phone</label>
+              <input
+                type="text"
+                className="form-control"
+                value={lead.phone || ''}
+                onChange={(e) => setLead({ ...lead, phone: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Outreach Stage</label>
+              <select className="form-control" value={lead.status} onChange={(e) => setLead({ ...lead, status: e.target.value })}>
+                <option value="NEW">New</option>
+                <option value="CONTACTED">Contacted</option>
+                <option value="COUNSELLING">Counselling</option>
+                <option value="COUNTRY_SELECTION">Country Selection</option>
+                <option value="UNIVERSITY_SHORTLISTING">University Shortlisting</option>
+                <option value="APPLICATION_SUBMITTED">Application Submitted</option>
+                <option value="OFFER_LETTER_RECEIVED">Offer Received</option>
+                <option value="VISA_PROCESSING">Visa Processing</option>
+                <option value="ENROLLED">Enrolled</option>
+                <option value="LOST">Lost</option>
+                <option value="JUNK">Junk</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Ingress Source</label>
+              <select className="form-control" value={lead.source} onChange={(e) => setLead({ ...lead, source: e.target.value })}>
+                <option value="WEBSITE_SDK">Website SDK</option>
+                <option value="WHATSAPP">WhatsApp</option>
+                <option value="TELEPHONY">Telephony</option>
+                <option value="MANUAL">Manual Ingress</option>
+                <option value="API_IMPORT">API Import</option>
+                <option value="FACEBOOK_ADS">Facebook Ads</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Scopes Assignments */}
+          <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Assignee Agent</label>
+              <select
+                className="form-control"
+                value={lead.assigneeId || ''}
+                onChange={(e) => handleAssignChange(e.target.value)}
+              >
+                <option value="">-- Unassigned --</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Branch Boundary</label>
+              <select
+                className="form-control"
+                value={lead.branchId || ''}
+                onChange={(e) => handleBranchChange(e.target.value)}
+              >
+                <option value="">-- No Branch Boundary --</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ fontWeight: 700, fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '6px' }}>
+            Study Abroad Academic Profile
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Target Country</label>
+              <input
+                type="text"
+                className="form-control"
+                value={lead.studentProfile?.targetCountry || ''}
+                onChange={(e) =>
+                  setLead({
+                    ...lead,
+                    studentProfile: { ...lead.studentProfile, targetCountry: e.target.value },
+                  })
+                }
+              />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Target Course</label>
+              <input
+                type="text"
+                className="form-control"
+                value={lead.studentProfile?.targetCourse || ''}
+                onChange={(e) =>
+                  setLead({
+                    ...lead,
+                    studentProfile: { ...lead.studentProfile, targetCourse: e.target.value },
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Intake Season</label>
+              <input
+                type="text"
+                className="form-control"
+                value={lead.studentProfile?.intake || ''}
+                onChange={(e) =>
+                  setLead({
+                    ...lead,
+                    studentProfile: { ...lead.studentProfile, intake: e.target.value },
+                  })
+                }
+              />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Current Qualification</label>
+              <input
+                type="text"
+                className="form-control"
+                value={lead.studentProfile?.currentQualification || ''}
+                onChange={(e) =>
+                  setLead({
+                    ...lead,
+                    studentProfile: { ...lead.studentProfile, currentQualification: e.target.value },
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>IELTS Exam</label>
+              <select
+                className="form-control"
+                value={lead.studentProfile?.ieltsStatus || 'NOT_TAKEN'}
+                onChange={(e) =>
+                  setLead({
+                    ...lead,
+                    studentProfile: { ...lead.studentProfile, ieltsStatus: e.target.value },
+                  })
+                }
+              >
+                <option value="NOT_TAKEN">Not Taken</option>
+                <option value="TAKEN_PASSED">Passed Exam</option>
+                <option value="BOOKED">Booked Exam</option>
+                <option value="WAIVED">Waived</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Passport</label>
+              <select
+                className="form-control"
+                value={lead.studentProfile?.passportStatus || 'NO_PASSPORT'}
+                onChange={(e) =>
+                  setLead({
+                    ...lead,
+                    studentProfile: { ...lead.studentProfile, passportStatus: e.target.value },
+                  })
+                }
+              >
+                <option value="NO_PASSPORT">No Passport</option>
+                <option value="VALID">Valid Passport</option>
+                <option value="EXPIRED">Expired</option>
+                <option value="APPLIED">Applied</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Education Level</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="e.g. Undergraduate"
+                value={lead.studentProfile?.educationLevel || ''}
+                onChange={(e) =>
+                  setLead({
+                    ...lead,
+                    studentProfile: { ...lead.studentProfile, educationLevel: e.target.value },
+                  })
+                }
+              />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Percentage / GPA</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="e.g. 78% or 3.2"
+                value={lead.studentProfile?.percentageGpa || ''}
+                onChange={(e) =>
+                  setLead({
+                    ...lead,
+                    studentProfile: { ...lead.studentProfile, percentageGpa: e.target.value },
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Budget Limit</label>
+            <input
+              type="text"
+              className="form-control"
+              value={lead.studentProfile?.budget || ''}
+              onChange={(e) =>
+                setLead({
+                  ...lead,
+                  studentProfile: { ...lead.studentProfile, budget: e.target.value },
+                })
+              }
+            />
+          </div>
+
+            <button type="submit" className="btn btn-primary" style={{ padding: '8px', marginTop: '4px' }}>
+              Save Profile Changes
+            </button>
+        </form>
+      </section>
+
+      {/* RIGHT PANE: Chronological Timeline Tabs */}
+      <section className="split-right">
+        <div className="tab-nav">
+          <button
+            className={`tab-btn ${activeTab === 'timeline' ? 'active' : ''}`}
+            onClick={() => setActiveTab('timeline')}
+          >
+            📜 Activity Log ({timeline.length})
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
+            onClick={() => setActiveTab('notes')}
+          >
+            ✏️ Add Note
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'documents' ? 'active' : ''}`}
+            onClick={() => setActiveTab('documents')}
+          >
+            📁 Documents Upload
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'followups' ? 'active' : ''}`}
+            onClick={() => setActiveTab('followups')}
+          >
+            📆 Schedule Followup
+          </button>
+        </div>
+
+        <div className="tab-content">
+          {/* Tab 1: Timeline */}
+          {activeTab === 'timeline' && (
+            <div className="timeline-list">
+              {timeline.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>
+                  No activity recorded on this student lead.
+                </p>
+              ) : (
+                timeline.map((node, index) => {
+                  const dateLabel = new Date(node.date).toLocaleString();
+                  const type = node.type;
+
+                  if (type === 'note') {
+                    return (
+                      <div key={index} className="timeline-node" style={{ borderLeftColor: '#86198f' }}>
+                        <div className="timeline-meta">📝 NOTE added by {node.data.author?.firstName || 'User'} at {dateLabel}</div>
+                        <div className="timeline-desc" style={{ fontStyle: 'italic', background: '#fdf4ff', padding: '6px', borderRadius: '4px', marginTop: '4px', borderLeft: '3px solid #d946ef' }}>
+                          "{node.data.content}"
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (type === 'document') {
+                    return (
+                      <div key={index} className="timeline-node" style={{ borderLeftColor: '#0c4a6e' }}>
+                        <div className="timeline-meta">📁 DOCUMENT upload: {node.data.type} ({node.data.fileName}) at {dateLabel}</div>
+                        <div className="timeline-desc">
+                          Status: <span className="badge" style={{ backgroundColor: '#f0f9ff', color: '#0369a1' }}>{node.data.status}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (type === 'followup') {
+                    return (
+                      <div key={index} className="timeline-node" style={{ borderLeftColor: '#ca8a04' }}>
+                        <div className="timeline-meta">📆 FOLLOWUP scheduled for {new Date(node.data.followupDate).toLocaleString()}</div>
+                        <div className="timeline-desc">
+                          Agenda: {node.data.notes || 'No notes'} — Status: <strong>{node.data.status}</strong>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Fallback to generic activity log
+                  return (
+                    <div key={index} className="timeline-node">
+                      <div className="timeline-meta">⚡ {node.data.type} — {dateLabel}</div>
+                      <div className="timeline-desc">{node.data.description}</div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* Tab 2: Notes Editor */}
+          {activeTab === 'notes' && (
+            <form onSubmit={handleAddNote} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div className="form-group">
+                <label>Counselor Note Content</label>
+                <textarea
+                  className="form-control"
+                  rows={4}
+                  placeholder="Record summary of counseling, student visa concerns, or qualification remarks..."
+                  value={noteContent}
+                  onChange={(e) => setNoteContent(e.target.value)}
+                  required
+                />
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ width: '120px' }}>
+                Save Note
+              </button>
+            </form>
+          )}
+
+          {/* Tab 3: Documents Upload & Verification */}
+          {activeTab === 'documents' && (
+            <div>
+              {/* Document upload form */}
+              <form onSubmit={handleDocumentUpload} style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Simulated R2 File Ingestion
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>Document Class Type</label>
+                      <select className="form-control" value={uploadType} onChange={(e) => setUploadType(e.target.value)}>
+                        <option value="PASSPORT">Passport Bio Page</option>
+                        <option value="IELTS">IELTS Scorecard</option>
+                        <option value="MARKSHEET_10TH">10th Grade Sheet</option>
+                        <option value="MARKSHEET_12TH">12th Grade Sheet</option>
+                        <option value="DEGREE">Degree Certificate</option>
+                        <option value="SOP">Statement of Purpose</option>
+                        <option value="LOR">Letter of Recommendation</option>
+                        <option value="OFFER_LETTER">University Offer</option>
+                        <option value="VISA_DOCUMENT">Visa Paper</option>
+                        <option value="OTHER">Other</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ flex: 2 }}>
+                      <label>Mock Filename</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="passport_scan_final.pdf"
+                        value={uploadFileName}
+                        onChange={(e) => setUploadFileName(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <button type="submit" className="btn btn-primary" style={{ width: '160px' }}>
+                    📤 Request R2 Presigned Upload
+                  </button>
+                </form>
+
+              {/* Active Documents List */}
+              <div style={{ fontWeight: 700, fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                Active Documents List
+              </div>
+              {lead.documents?.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '12px' }}>
+                  No documents uploaded for this candidate.
+                </p>
+              ) : (
+                <table className="dense-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>Document Type</th>
+                      <th>File details</th>
+                      <th>Approval Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lead.documents?.map((doc: any) => (
+                      <tr key={doc.id}>
+                        <td><strong>{doc.type}</strong></td>
+                        <td>
+                          <a href={doc.fileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                            {doc.fileName}
+                          </a>
+                          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                            {(doc.fileSize / 1024).toFixed(1)} KB — Uploaded: {new Date(doc.createdAt).toLocaleDateString()}
+                          </div>
+                        </td>
+                        <td>
+                          <span
+                            className="badge"
+                            style={{
+                              backgroundColor:
+                                doc.status === 'APPROVED' ? '#dcfce7' : doc.status === 'REJECTED' ? '#fee2e2' : '#fef9c3',
+                              color:
+                                doc.status === 'APPROVED' ? '#166534' : doc.status === 'REJECTED' ? '#991b1b' : '#854d0e',
+                            }}
+                          >
+                            {doc.status}
+                          </span>
+                          {doc.rejectionReason && (
+                            <div style={{ fontSize: '9px', color: 'var(--danger-color)', marginTop: '2px' }}>
+                              Reason: {doc.rejectionReason}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          {doc.status === 'PENDING' ? (
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                onClick={() => handleApproveDocument(doc.id)}
+                                className="btn btn-sm"
+                                style={{ backgroundColor: 'var(--success-color)', color: '#fff', borderColor: 'var(--success-color)' }}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => setRejectionDocId(doc.id)}
+                                className="btn btn-sm btn-danger"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* Tab 4: Schedule Followup */}
+          {activeTab === 'followups' && (
+            <form onSubmit={handleScheduleFollowup} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div className="form-group">
+                <label>Follow-up Date / Time</label>
+                <input
+                  type="datetime-local"
+                  className="form-control"
+                  value={followupDate}
+                  onChange={(e) => setFollowupDate(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Action Objective notes</label>
+                <textarea
+                  className="form-control"
+                  rows={3}
+                  placeholder="Record call attempt agenda or document reminders..."
+                  value={followupNotes}
+                  onChange={(e) => setFollowupNotes(e.target.value)}
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary" style={{ width: '150px' }}>
+                📆 Book Calendar Entry
+              </button>
+            </form>
+          )}
+        </div>
+      </section>
+
+      {/* Rejection Reason Modal */}
+      {rejectionDocId && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.4)',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div className="login-card" style={{ width: '400px' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px' }}>Reject Document Reason</h3>
+            <div className="form-group">
+              <label>Rejection Reason</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                placeholder="Explain the document rejection reason (e.g. invalid date, low resolution)..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '12px' }}>
+              <button className="btn" onClick={() => setRejectionDocId(null)}>
+                Cancel
+              </button>
+              <button className="btn btn-danger" onClick={handleRejectDocument}>
+                Reject Document
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

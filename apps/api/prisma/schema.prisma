@@ -1,0 +1,341 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  BRANCH_MANAGER
+  AGENT
+  VIEWER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  COUNSELLING
+  COUNTRY_SELECTION
+  UNIVERSITY_SHORTLISTING
+  APPLICATION_SUBMITTED
+  OFFER_LETTER_RECEIVED
+  VISA_PROCESSING
+  ENROLLED
+  LOST
+  JUNK
+}
+
+enum LeadSource {
+  WEBSITE_SDK
+  WHATSAPP
+  TELEPHONY
+  MANUAL
+  API_IMPORT
+  FACEBOOK_ADS
+  DYNAMIC_FORM
+}
+
+enum DocumentType {
+  PASSPORT
+  IELTS
+  MARKSHEET_10TH
+  MARKSHEET_12TH
+  DEGREE
+  SOP
+  LOR
+  OFFER_LETTER
+  VISA_DOCUMENT
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum FollowupStatus {
+  SCHEDULED
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+model Tenant {
+  id           String     @id @default(uuid())
+  name         String
+  domain       String     @unique
+  customDomain String?    @unique
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  users        User[]
+  branches     Branch[]
+  auditLogs    AuditLog[]
+  leads        Lead[]
+  visitors     Visitor[]
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  code      String   @unique
+  city      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+  leads     Lead[]
+
+  @@index([tenantId])
+}
+
+model User {
+  id           String     @id @default(uuid())
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branchId     String?
+  branch       Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  email        String     @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         Role       @default(AGENT)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  auditLogs    AuditLog[]
+  assignedLeads Lead[]    @relation("LeadAssignee")
+  notes        Note[]
+  activities   Activity[]
+  followups    Followup[]
+  approvedDocs Document[] @relation("DocApprover")
+  notifications Notification[]
+  sessions     UserSession[]
+}
+
+model Lead {
+  id             String      @id @default(uuid())
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  firstName      String?
+  lastName       String?
+  email          String?
+  normalizedEmail String?
+  phone          String?
+  normalizedPhone String?
+  status         LeadStatus  @default(NEW)
+  source         LeadSource  @default(MANUAL)
+  assigneeId     String?
+  assignee       User?       @relation("LeadAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  visitorId      String?
+  visitor        Visitor?    @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  studentProfile StudentProfile?
+  documents      Document[]
+  followups      Followup[]
+  activities     Activity[]
+  notes          Note[]
+
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([status])
+  @@index([normalizedEmail])
+  @@index([normalizedPhone])
+}
+
+model StudentProfile {
+  id                   String   @id @default(uuid())
+  leadId               String   @unique
+  lead                 Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  targetCountry        String?
+  targetCourse         String?
+  intake               String?
+  ieltsStatus          String?
+  passportStatus       String?
+  educationLevel       String?
+  percentageGpa        String?
+  budget               String?
+  currentQualification String?
+  updatedAt            DateTime @updatedAt
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+}
+
+model Document {
+  id             String         @id @default(uuid())
+  leadId         String
+  lead           Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type           DocumentType
+  fileName       String
+  fileUrl        String
+  fileSize       Int
+  status         ApprovalStatus @default(PENDING)
+  rejectionReason String?
+  approvedById   String?
+  approvedBy     User?          @relation("DocApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([leadId])
+  @@index([status])
+}
+
+model Followup {
+  id             String         @id @default(uuid())
+  leadId         String
+  lead           Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedUserId String
+  assignedUser   User           @relation(fields: [assignedUserId], references: [id], onDelete: Cascade)
+  followupDate   DateTime
+  status         FollowupStatus @default(SCHEDULED)
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([leadId])
+  @@index([assignedUserId])
+  @@index([followupDate])
+  @@index([status])
+}
+
+model Activity {
+  id          String   @id @default(uuid())
+  leadId      String
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  type        String
+  description String
+  meta        Json?
+  createdAt   DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model UserSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action       String
+  targetEntity String
+  targetId     String
+  beforeState  Json?
+  afterState   Json?
+  ipAddress    String?
+  timestamp    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([targetEntity, targetId])
+  @@index([timestamp])
+}
+
+model Visitor {
+  id        String           @id @default(uuid())
+  tenantId  String
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  leads     Lead[]
+  sessions  VisitorSession[]
+
+  @@index([tenantId])
+}
+
+model VisitorSession {
+  id          String         @id @default(uuid())
+  visitorId   String
+  visitor     Visitor        @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  sessionId   String         @unique
+  referrer    String?
+  landingPage String?
+  deviceType  String?
+  browser     String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  createdAt   DateTime       @default(now())
+  events      VisitorEvent[]
+  sources     TrackingSource[]
+
+  @@index([visitorId])
+  @@index([sessionId])
+}
+
+model VisitorEvent {
+  id        String         @id @default(uuid())
+  sessionId String
+  session   VisitorSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  type      String
+  meta      Json?
+  createdAt DateTime       @default(now())
+
+  @@index([sessionId])
+}
+
+model TrackingSource {
+  id          String         @id @default(uuid())
+  sessionId   String
+  session     VisitorSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  source      String
+  landingPage String
+  referrer    String?
+  createdAt   DateTime       @default(now())
+
+  @@index([sessionId])
+}
