@@ -198,6 +198,8 @@ model Document {
   filePath         String
   fileSize         Int
   mimeType         String
+  isPasswordProtected Boolean     @default(false)
+  pdfPassword      String?
   uploadedAt       DateTime       @default(now())
   approvalStatus   ApprovalStatus @default(PENDING)
   rejectionReason  String?

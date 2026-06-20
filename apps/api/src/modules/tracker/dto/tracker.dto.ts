@@ -28,11 +28,38 @@ export class TrackFormDto {
     name?: string;
     email?: string;
     phone?: string;
+    country?: string;
+    course?: string;
+    intake?: string;
     [key: string]: any;
   };
 
   @IsString()
   url: string;
+
+  @IsString()
+  @IsOptional()
+  referrer?: string;
+
+  @IsString()
+  @IsOptional()
+  utmSource?: string;
+
+  @IsString()
+  @IsOptional()
+  utmMedium?: string;
+
+  @IsString()
+  @IsOptional()
+  utmCampaign?: string;
+
+  @IsString()
+  @IsOptional()
+  utmContent?: string;
+
+  @IsString()
+  @IsOptional()
+  utmTerm?: string;
 }
 
 export class IdentifyVisitorDto {

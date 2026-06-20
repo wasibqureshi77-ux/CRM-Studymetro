@@ -10,6 +10,7 @@ export class TenantMiddleware implements NestMiddleware {
   async use(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     // 1. Extract tenant identifier from X-Tenant-ID header, or subdomain
     let tenantIdentifier = req.headers['x-tenant-id'] as string;
+    const requestPath = req.originalUrl || req.path || req.url || '';
 
     if (!tenantIdentifier) {
       const hostname = req.hostname;
@@ -22,7 +23,6 @@ export class TenantMiddleware implements NestMiddleware {
 
     if (!tenantIdentifier) {
       // Allow auth and tracker routes to skip resolution
-      const requestPath = req.path || req.originalUrl || req.url || '';
       if (
         requestPath.startsWith('/api/v1/auth') ||
         requestPath.startsWith('/api/v1/tracker') ||

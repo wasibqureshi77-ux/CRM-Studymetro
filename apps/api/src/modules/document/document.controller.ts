@@ -24,6 +24,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
+import { ConfigService } from '@nestjs/config';
+import { decryptPassword } from './utils/encryption.util';
+import { PDFDocument } from 'pdf-lib';
+import { decryptPDF } from '@pdfsmaller/pdf-decrypt';
 
 const UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'documents');
 
@@ -67,7 +71,10 @@ const multerConfig = {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/v1/documents')
 export class DocumentController {
-  constructor(private readonly documentService: DocumentService) {}
+  constructor(
+    private readonly documentService: DocumentService,
+    private readonly configService: ConfigService
+  ) {}
 
   @Permissions('docs:read')
   @Get()
@@ -100,7 +107,7 @@ export class DocumentController {
     }
 
     try {
-      return await this.documentService.upload(file, leadId, dto.documentType, tenantId, actorId);
+      return await this.documentService.upload(file, leadId, dto.documentType, tenantId, actorId, dto.pdfPassword);
     } catch (error) {
       if (file.path && fs.existsSync(file.path)) {
         fs.unlinkSync(file.path);
@@ -128,6 +135,23 @@ export class DocumentController {
       throw new NotFoundException('Physical file not found');
     }
 
+    if (document.isPasswordProtected && document.mimeType === 'application/pdf') {
+      const jwtSecret = this.configService.get<string>('JWT_SECRET') || 'study-metro-very-secure-jwt-key-2026-sprint1';
+      const decryptedPassword = decryptPassword(document.pdfPassword, jwtSecret);
+      const fileBytes = fs.readFileSync(resolvedPath);
+      try {
+        const decryptedPdfBytes = await decryptPDF(new Uint8Array(fileBytes), decryptedPassword);
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(document.originalFileName)}"`);
+        res.setHeader('Content-Length', decryptedPdfBytes.length);
+        res.send(Buffer.from(decryptedPdfBytes));
+        return;
+      } catch (err) {
+        // Fallback to normal download on error
+      }
+    }
+
     res.download(resolvedPath, document.originalFileName);
   }
 
@@ -148,6 +172,23 @@ export class DocumentController {
 
     if (!fs.existsSync(resolvedPath)) {
       throw new NotFoundException('Physical file not found');
+    }
+
+    if (document.isPasswordProtected && document.mimeType === 'application/pdf') {
+      const jwtSecret = this.configService.get<string>('JWT_SECRET') || 'study-metro-very-secure-jwt-key-2026-sprint1';
+      const decryptedPassword = decryptPassword(document.pdfPassword, jwtSecret);
+      const fileBytes = fs.readFileSync(resolvedPath);
+      try {
+        const decryptedPdfBytes = await decryptPDF(new Uint8Array(fileBytes), decryptedPassword);
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.originalFileName)}"`);
+        res.setHeader('Content-Length', decryptedPdfBytes.length);
+        res.send(Buffer.from(decryptedPdfBytes));
+        return;
+      } catch (err) {
+        // Fallback to normal view on error
+      }
     }
 
     res.setHeader('Content-Type', document.mimeType);

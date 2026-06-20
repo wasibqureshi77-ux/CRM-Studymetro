@@ -31,6 +31,7 @@ export default function LeadDetailPage() {
   // Document Upload State
   const [uploadType, setUploadType] = useState('PASSPORT');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [pdfPassword, setPdfPassword] = useState('');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
 
@@ -196,6 +197,9 @@ export default function LeadDetailPage() {
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('documentType', uploadType);
+    if (pdfPassword) {
+      formData.append('pdfPassword', pdfPassword);
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE}/api/v1/documents/upload/${id}`, true);
@@ -222,6 +226,7 @@ export default function LeadDetailPage() {
         addToast('success', 'Document uploaded successfully.');
         setSuccessMsg('Document uploaded successfully.');
         setSelectedFile(null);
+        setPdfPassword('');
         const fileInput = document.getElementById('document-file-input') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
         await loadAllData();
@@ -802,6 +807,19 @@ export default function LeadDetailPage() {
                       />
                     </div>
                   </div>
+
+                  {selectedFile && (selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf')) && (
+                    <div className="form-group" style={{ marginBottom: '10px' }}>
+                      <label>PDF Password (Optional)</label>
+                      <input
+                        type="password"
+                        className="form-control"
+                        placeholder="Enter PDF password if file is protected..."
+                        value={pdfPassword}
+                        onChange={(e) => setPdfPassword(e.target.value)}
+                      />
+                    </div>
+                  )}
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <button type="submit" className="btn btn-primary" style={{ width: '160px' }}>

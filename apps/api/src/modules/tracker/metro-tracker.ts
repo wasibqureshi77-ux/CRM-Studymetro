@@ -148,6 +148,20 @@ export const METRO_TRACKER_SDK = `(function() {
         var form = event.target;
         if (!form) return;
 
+        var formId = (form.id || '').toLowerCase();
+        var formClass = (form.className || '').toLowerCase();
+        var formName = (form.name || '').toLowerCase();
+        var formAction = (form.getAttribute('action') || '').toLowerCase();
+        var isMetroCapture = form.getAttribute('data-metro-capture') === 'true';
+
+        var matchesContact = formId.indexOf('contact') > -1 || formClass.indexOf('contact') > -1 || formName.indexOf('contact') > -1 || formAction.indexOf('contact') > -1;
+        var matchesConsult = formId.indexOf('consult') > -1 || formClass.indexOf('consult') > -1 || formName.indexOf('consult') > -1 || formAction.indexOf('consult') > -1;
+        var matchesAdmission = formId.indexOf('admission') > -1 || formClass.indexOf('admission') > -1 || formName.indexOf('admission') > -1 || formAction.indexOf('admission') > -1;
+
+        if (!isMetroCapture && !matchesContact && !matchesConsult && !matchesAdmission) {
+          return;
+        }
+
         var fields = {};
         var inputs = form.querySelectorAll('input, select, textarea');
         
@@ -168,15 +182,28 @@ export const METRO_TRACKER_SDK = `(function() {
             } else {
               fields.name = val;
             }
+          } else if (name.indexOf('country') > -1 || name.indexOf('destination') > -1) {
+            fields.country = val;
+          } else if (name.indexOf('course') > -1 || name.indexOf('program') > -1 || name.indexOf('degree') > -1 || name.indexOf('major') > -1) {
+            fields.course = val;
+          } else if (name.indexOf('intake') > -1 || name.indexOf('term') > -1 || name.indexOf('semester') > -1) {
+            fields.intake = val;
           }
         }
 
         if (fields.email || fields.phone) {
+          var utm = getUtmParams();
           sendRequest('/api/v1/tracker/form', {
             visitorId: visitorId,
             sessionId: sessionId,
             formFields: fields,
-            url: window.location.href
+            url: window.location.href,
+            referrer: document.referrer || null,
+            utmSource: utm.utm_source || null,
+            utmMedium: utm.utm_medium || null,
+            utmCampaign: utm.utm_campaign || null,
+            utmContent: utm.utm_content || null,
+            utmTerm: utm.utm_term || null
           });
         }
       }, true);

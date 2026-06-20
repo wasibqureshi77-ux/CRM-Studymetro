@@ -83,13 +83,84 @@ export class TrackerService {
     }
 
     // 4. Log Event
-    return this.prisma.visitorEvent.create({
+    const event = await this.prisma.visitorEvent.create({
       data: {
         sessionId: dto.sessionId,
         type: dto.type,
         meta: dto.meta || {}
       }
     });
+
+    // If PAGE_VIEW, and visitor is already associated with a lead, log WEBSITE_VISIT activity immediately
+    if (dto.type === 'PAGE_VIEW') {
+      const matchedLead = await this.prisma.lead.findFirst({
+        where: { visitorId: dto.visitorId, tenantId, deletedAt: null }
+      });
+      if (matchedLead) {
+        const pageUrl = dto.meta?.landingPage || 'Landing Page';
+        await this.prisma.activity.create({
+          data: {
+            leadId: matchedLead.id,
+            type: 'WEBSITE_VISIT',
+            description: `Visitor visited page: ${pageUrl}`,
+            meta: {
+              sessionId: dto.sessionId,
+              referrer: dto.meta?.referrer || null,
+              utmSource: dto.meta?.utmSource || null,
+              utmMedium: dto.meta?.utmMedium || null,
+              utmCampaign: dto.meta?.utmCampaign || null
+            }
+          }
+        });
+      }
+    }
+
+    return event;
+  }
+
+  // Helper to sync past events to activities for a lead
+  private async syncPastEventsToActivities(visitorId: string, leadId: string) {
+    // Find all visitor sessions for this visitor
+    const sessions = await this.prisma.visitorSession.findMany({
+      where: { visitorId },
+      include: { events: true }
+    });
+
+    for (const session of sessions) {
+      for (const event of session.events) {
+        if (event.type === 'PAGE_VIEW') {
+          const meta = (event.meta as any) || {};
+          const pageUrl = meta.landingPage || 'Landing Page';
+
+          // Check if activity already exists to prevent duplicate entries
+          const existingActivity = await this.prisma.activity.findFirst({
+            where: {
+              leadId,
+              type: 'WEBSITE_VISIT',
+              createdAt: event.createdAt
+            }
+          });
+
+          if (!existingActivity) {
+            await this.prisma.activity.create({
+              data: {
+                leadId,
+                type: 'WEBSITE_VISIT',
+                description: `Visitor visited page: ${pageUrl}`,
+                meta: {
+                  sessionId: session.sessionId,
+                  referrer: meta.referrer || null,
+                  utmSource: meta.utmSource || null,
+                  utmMedium: meta.utmMedium || null,
+                  utmCampaign: meta.utmCampaign || null,
+                },
+                createdAt: event.createdAt
+              }
+            });
+          }
+        }
+      }
+    }
   }
 
   async trackForm(dto: TrackFormDto, tenantId: string) {
@@ -117,9 +188,32 @@ export class TrackerService {
         data: {
           visitorId: dto.visitorId,
           sessionId: dto.sessionId,
-          landingPage: dto.url
+          landingPage: dto.url,
+          referrer: dto.referrer || null,
+          utmSource: dto.utmSource || null,
+          utmMedium: dto.utmMedium || null,
+          utmCampaign: dto.utmCampaign || null,
+          utmContent: dto.utmContent || null,
+          utmTerm: dto.utmTerm || null
         }
       });
+    } else {
+      // Update session with UTMs or referrer if not present
+      const sessionUpdate: any = {};
+      if (!session.referrer && dto.referrer) sessionUpdate.referrer = dto.referrer;
+      if (!session.landingPage && dto.url) sessionUpdate.landingPage = dto.url;
+      if (!session.utmSource && dto.utmSource) sessionUpdate.utmSource = dto.utmSource;
+      if (!session.utmMedium && dto.utmMedium) sessionUpdate.utmMedium = dto.utmMedium;
+      if (!session.utmCampaign && dto.utmCampaign) sessionUpdate.utmCampaign = dto.utmCampaign;
+      if (!session.utmContent && dto.utmContent) sessionUpdate.utmContent = dto.utmContent;
+      if (!session.utmTerm && dto.utmTerm) sessionUpdate.utmTerm = dto.utmTerm;
+
+      if (Object.keys(sessionUpdate).length > 0) {
+        session = await this.prisma.visitorSession.update({
+          where: { sessionId: dto.sessionId },
+          data: sessionUpdate
+        });
+      }
     }
 
     // 3. Log Event
@@ -129,7 +223,13 @@ export class TrackerService {
         type: 'FORM_SUBMIT',
         meta: {
           url: dto.url,
-          formFields: dto.formFields
+          formFields: dto.formFields,
+          referrer: dto.referrer || null,
+          utmSource: dto.utmSource || null,
+          utmMedium: dto.utmMedium || null,
+          utmCampaign: dto.utmCampaign || null,
+          utmContent: dto.utmContent || null,
+          utmTerm: dto.utmTerm || null
         }
       }
     });
@@ -159,18 +259,69 @@ export class TrackerService {
             normEmail ? { normalizedEmail: normEmail } : undefined,
             normPhone ? { normalizedPhone: normPhone } : undefined
           ].filter(Boolean) as any
+        },
+        include: {
+          studentProfile: true
         }
       });
     }
 
+    const country = dto.formFields.country || null;
+    const course = dto.formFields.course || null;
+    const intake = dto.formFields.intake || null;
+
     if (existingLead) {
       // Prevent duplicates: link current visitor, and create match activity log
+      const updateData: any = {};
       if (!existingLead.visitorId) {
-        await this.prisma.lead.update({
+        updateData.visitorId = dto.visitorId;
+      }
+
+      // Update studentProfile fields if missing/changed and supplied
+      if (country || course || intake) {
+        updateData.studentProfile = {
+          upsert: {
+            create: {
+              targetCountry: country,
+              targetCourse: course,
+              intake: intake
+            },
+            update: {
+              targetCountry: country || undefined,
+              targetCourse: course || undefined,
+              intake: intake || undefined
+            }
+          }
+        };
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        existingLead = await this.prisma.lead.update({
           where: { id: existingLead.id },
-          data: { visitorId: dto.visitorId }
+          data: updateData,
+          include: { studentProfile: true }
         });
       }
+
+      // Sync past events to WEBSITE_VISIT activities
+      await this.syncPastEventsToActivities(dto.visitorId, existingLead.id);
+
+      // Log form submission activity
+      await this.prisma.activity.create({
+        data: {
+          leadId: existingLead.id,
+          type: 'FORM_SUBMITTED',
+          description: `Form submitted on page: ${dto.url}`,
+          meta: {
+            sessionId: dto.sessionId,
+            formFields: dto.formFields,
+            referrer: dto.referrer || null,
+            utmSource: dto.utmSource || null,
+            utmMedium: dto.utmMedium || null,
+            utmCampaign: dto.utmCampaign || null
+          }
+        }
+      });
 
       await this.prisma.activity.create({
         data: {
@@ -215,11 +366,39 @@ export class TrackerService {
         source: sourceVal,
         status: 'NEW',
         studentProfile: {
-          create: {}
+          create: {
+            targetCountry: country,
+            targetCourse: course,
+            intake: intake
+          }
+        }
+      },
+      include: {
+        studentProfile: true
+      }
+    });
+
+    // Sync past events to WEBSITE_VISIT activities
+    await this.syncPastEventsToActivities(dto.visitorId, newLead.id);
+
+    // Log form submission activity
+    await this.prisma.activity.create({
+      data: {
+        leadId: newLead.id,
+        type: 'FORM_SUBMITTED',
+        description: `Form submitted on page: ${dto.url}`,
+        meta: {
+          sessionId: dto.sessionId,
+          formFields: dto.formFields,
+          referrer: dto.referrer || null,
+          utmSource: dto.utmSource || null,
+          utmMedium: dto.utmMedium || null,
+          utmCampaign: dto.utmCampaign || null
         }
       }
     });
 
+    // Log lead created activity
     await this.prisma.activity.create({
       data: {
         leadId: newLead.id,
@@ -255,6 +434,9 @@ export class TrackerService {
           description: `Visitor identified as ${dto.email}. Traits: ${JSON.stringify(dto.traits)}`
         }
       });
+
+      // Sync past events to WEBSITE_VISIT activities
+      await this.syncPastEventsToActivities(dto.visitorId, lead.id);
     }
 
     return { success: true };

@@ -4,6 +4,10 @@ import { DocumentType, ApprovalStatus } from '@prisma/client';
 export class UploadDocumentDto {
   @IsEnum(DocumentType)
   documentType: DocumentType;
+
+  @IsOptional()
+  @IsString()
+  pdfPassword?: string;
 }
 
 export class ApproveDocumentDto {
