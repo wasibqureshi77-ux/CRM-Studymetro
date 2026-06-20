@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
-import { CreateDocumentDto, ApproveDocumentDto } from './dto/document.dto';
-import { ApprovalStatus } from '@prisma/client';
+import { ApproveDocumentDto } from './dto/document.dto';
+import { ApprovalStatus, DocumentType } from '@prisma/client';
+import * as path from 'path';
 
 @Injectable()
 export class DocumentService {
@@ -29,53 +30,73 @@ export class DocumentService {
         }
       },
       orderBy: {
-        createdAt: 'desc'
+        uploadedAt: 'desc'
       }
     });
   }
 
-  async uploadRequest(dto: CreateDocumentDto, tenantId: string, actorId: string) {
+  async findById(id: string, tenantId: string) {
+    const doc = await this.prisma.document.findFirst({
+      where: {
+        id,
+        lead: {
+          tenantId,
+          deletedAt: null
+        }
+      }
+    });
+
+    if (!doc) {
+      throw new NotFoundException('Document not found or access unauthorized');
+    }
+
+    return doc;
+  }
+
+  async upload(
+    file: Express.Multer.File,
+    leadId: string,
+    documentType: DocumentType,
+    tenantId: string,
+    actorId: string
+  ) {
     // 1. Verify Lead exists under Tenant
     const lead = await this.prisma.lead.findFirst({
-      where: { id: dto.leadId, tenantId, deletedAt: null }
+      where: { id: leadId, tenantId, deletedAt: null }
     });
 
     if (!lead) {
       throw new NotFoundException('Lead not found under tenant');
     }
 
-    // 2. Generate Mock pre-signed URL to Cloudflare R2
-    const fileUuid = crypto.randomUUID();
-    const mockR2Key = `study-metro-assets/${tenantId}/${dto.leadId}/${fileUuid}_${dto.fileName}`;
-    const mockPresignedUrl = `https://r2.studymetro.com/${mockR2Key}?expires=900`;
+    const sanitizedOriginal = path.basename(file.originalname);
 
-    // 3. Save pending record in DB
+    // 2. Save document record in DB
     const doc = await this.prisma.document.create({
       data: {
-        leadId: dto.leadId,
-        type: dto.type,
-        fileName: dto.fileName,
-        fileUrl: mockPresignedUrl,
-        fileSize: dto.fileSize,
-        status: ApprovalStatus.PENDING
+        leadId,
+        documentType,
+        originalFileName: sanitizedOriginal,
+        storedFileName: file.filename,
+        filePath: file.path,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        approvalStatus: ApprovalStatus.PENDING
       }
     });
 
-    // 4. Log timeline activity
+    // 3. Log timeline activity
     await this.prisma.activity.create({
       data: {
-        leadId: dto.leadId,
+        leadId,
         actorId,
         type: 'DOCUMENT_UPLOADED',
-        description: `Document ${dto.type} (${dto.fileName}) uploaded. Awaiting approval.`,
+        description: `Document ${documentType} (${sanitizedOriginal}) uploaded. Awaiting approval.`,
         meta: { docId: doc.id }
       }
     });
 
-    return {
-      document: doc,
-      uploadUrl: mockPresignedUrl
-    };
+    return doc;
   }
 
   async approve(id: string, dto: ApproveDocumentDto, tenantId: string, actorId: string) {
@@ -97,8 +118,8 @@ export class DocumentService {
     const updated = await this.prisma.document.update({
       where: { id },
       data: {
-        status: dto.status,
-        rejectionReason: dto.status === ApprovalStatus.REJECTED ? dto.rejectionReason : null,
+        approvalStatus: dto.approvalStatus,
+        rejectionReason: dto.approvalStatus === ApprovalStatus.REJECTED ? dto.rejectionReason : null,
         approvedById: actorId,
         approvedAt: new Date()
       }
@@ -109,8 +130,8 @@ export class DocumentService {
       data: {
         leadId: doc.leadId,
         actorId,
-        type: `DOCUMENT_${dto.status}`,
-        description: `Document ${doc.type} marked as ${dto.status}. ${dto.status === ApprovalStatus.REJECTED ? 'Reason: ' + dto.rejectionReason : ''}`,
+        type: `DOCUMENT_${dto.approvalStatus}`,
+        description: `Document ${doc.documentType} marked as ${dto.approvalStatus}. ${dto.approvalStatus === ApprovalStatus.REJECTED ? 'Reason: ' + dto.rejectionReason : ''}`,
         meta: { docId: id }
       }
     });
@@ -119,8 +140,8 @@ export class DocumentService {
     if (doc.lead.assigneeId) {
       await this.notificationService.create(
         doc.lead.assigneeId,
-        `Document ${doc.type} ${dto.status}`,
-        `The document ${doc.fileName} for lead ${doc.lead.firstName || ''} ${doc.lead.lastName || ''} has been ${dto.status.toLowerCase()}.`
+        `Document ${doc.documentType} ${dto.approvalStatus}`,
+        `The document ${doc.originalFileName} for lead ${doc.lead.firstName || ''} ${doc.lead.lastName || ''} has been ${dto.approvalStatus.toLowerCase()}.`
       );
     }
 
@@ -129,7 +150,7 @@ export class DocumentService {
       data: {
         tenantId,
         userId: actorId,
-        action: `DOCUMENT_${dto.status}`,
+        action: `DOCUMENT_${dto.approvalStatus}`,
         targetEntity: 'Document',
         targetId: id,
         beforeState: beforeState as any,

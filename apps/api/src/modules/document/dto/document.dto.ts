@@ -1,23 +1,14 @@
-import { IsEnum, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { DocumentType, ApprovalStatus } from '@prisma/client';
 
-export class CreateDocumentDto {
-  @IsUUID()
-  leadId: string;
-
+export class UploadDocumentDto {
   @IsEnum(DocumentType)
-  type: DocumentType;
-
-  @IsString()
-  fileName: string;
-
-  @IsNumber()
-  fileSize: number;
+  documentType: DocumentType;
 }
 
 export class ApproveDocumentDto {
   @IsEnum(ApprovalStatus)
-  status: ApprovalStatus;
+  approvalStatus: ApprovalStatus;
 
   @IsOptional()
   @IsString()

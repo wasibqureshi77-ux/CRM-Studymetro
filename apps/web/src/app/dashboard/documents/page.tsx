@@ -36,7 +36,7 @@ export default function DocumentsPage() {
     setSuccessMsg('');
     try {
       await api.patch(`/api/v1/documents/${docId}/approve`, {
-        status: 'APPROVED'
+        approvalStatus: 'APPROVED'
       });
       setSuccessMsg('Document successfully approved.');
       await fetchDocuments();
@@ -57,7 +57,7 @@ export default function DocumentsPage() {
     setSuccessMsg('');
     try {
       await api.patch(`/api/v1/documents/${rejectionDocId}/approve`, {
-        status: 'REJECTED',
+        approvalStatus: 'REJECTED',
         rejectionReason: rejectionReason
       });
       setSuccessMsg('Document successfully rejected.');
@@ -71,9 +71,23 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleDownload = async (url: string, filename: string) => {
+  const handleDownload = async (docId: string, filename: string) => {
     try {
-      const response = await fetch(url);
+      const getCookie = (name: string): string | undefined => {
+        if (typeof document === 'undefined') return undefined;
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop()?.split(';').shift();
+        return undefined;
+      };
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const response = await fetch(`${API_BASE}/api/v1/documents/download/${docId}`, {
+        headers: {
+          'Authorization': `Bearer ${getCookie('sm_session')}`,
+          'x-tenant-id': getCookie('sm_tenant_id') || ''
+        }
+      });
+      if (!response.ok) throw new Error('Download failed');
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -83,8 +97,33 @@ export default function DocumentsPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(blobUrl);
-    } catch (err) {
-      window.open(url, '_blank');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to download document.');
+    }
+  };
+
+  const handleView = async (docId: string) => {
+    try {
+      const getCookie = (name: string): string | undefined => {
+        if (typeof document === 'undefined') return undefined;
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop()?.split(';').shift();
+        return undefined;
+      };
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const response = await fetch(`${API_BASE}/api/v1/documents/view/${docId}`, {
+        headers: {
+          'Authorization': `Bearer ${getCookie('sm_session')}`,
+          'x-tenant-id': getCookie('sm_tenant_id') || ''
+        }
+      });
+      if (!response.ok) throw new Error('View failed');
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to open document.');
     }
   };
 
@@ -127,10 +166,14 @@ export default function DocumentsPage() {
               <tr>
                 <th>Student</th>
                 <th>Document Type</th>
-                <th>File details</th>
-                <th>Status</th>
-                <th>Uploaded Date</th>
-                <th>Actions</th>
+                <th>File Name</th>
+                <th>Upload Date</th>
+                <th>File Size</th>
+                <th>Approval Status</th>
+                <th>View</th>
+                <th>Download</th>
+                <th>Approve</th>
+                <th>Reject</th>
               </tr>
             </thead>
             <tbody>
@@ -146,25 +189,24 @@ export default function DocumentsPage() {
                     )}
                   </td>
                   <td>
-                    <strong>{doc.type}</strong>
+                    <strong>{doc.documentType}</strong>
                   </td>
                   <td>
-                    <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>{doc.fileName}</span>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                      {(doc.fileSize / 1024).toFixed(1)} KB
-                    </div>
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>{doc.originalFileName}</span>
                   </td>
+                  <td>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
+                  <td>{(doc.fileSize / 1024).toFixed(1)} KB</td>
                   <td>
                     <span
                       className="badge"
                       style={{
                         backgroundColor:
-                          doc.status === 'APPROVED' ? '#dcfce7' : doc.status === 'REJECTED' ? '#fee2e2' : '#fef9c3',
+                          doc.approvalStatus === 'APPROVED' ? '#dcfce7' : doc.approvalStatus === 'REJECTED' ? '#fee2e2' : '#fef9c3',
                         color:
-                          doc.status === 'APPROVED' ? '#166534' : doc.status === 'REJECTED' ? '#991b1b' : '#854d0e',
+                          doc.approvalStatus === 'APPROVED' ? '#166534' : doc.approvalStatus === 'REJECTED' ? '#991b1b' : '#854d0e',
                       }}
                     >
-                      {doc.status}
+                      {doc.approvalStatus}
                     </span>
                     {doc.rejectionReason && (
                       <div style={{ fontSize: '10px', color: 'var(--danger-color)', marginTop: '2px', fontStyle: 'italic' }}>
@@ -172,33 +214,40 @@ export default function DocumentsPage() {
                       </div>
                     )}
                   </td>
-                  <td>{new Date(doc.createdAt).toLocaleString()}</td>
                   <td>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ textDecoration: 'none' }}>
-                        👁️ View
-                      </a>
-                      <button onClick={() => handleDownload(doc.fileUrl, doc.fileName)} className="btn btn-sm">
-                        📥 Download
+                    <button onClick={() => handleView(doc.id)} className="btn btn-sm">
+                      👁️ View
+                    </button>
+                  </td>
+                  <td>
+                    <button onClick={() => handleDownload(doc.id, doc.originalFileName)} className="btn btn-sm">
+                      📥 Download
+                    </button>
+                  </td>
+                  <td>
+                    {doc.approvalStatus === 'PENDING' ? (
+                      <button
+                        onClick={() => handleApprove(doc.id)}
+                        className="btn btn-sm"
+                        style={{ backgroundColor: 'var(--success-color)', color: '#fff', borderColor: 'var(--success-color)' }}
+                      >
+                        Approve
                       </button>
-                      {doc.status === 'PENDING' && (
-                        <>
-                          <button
-                            onClick={() => handleApprove(doc.id)}
-                            className="btn btn-sm"
-                            style={{ backgroundColor: 'var(--success-color)', color: '#fff', borderColor: 'var(--success-color)' }}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => setRejectionDocId(doc.id)}
-                            className="btn btn-sm btn-danger"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    ) : (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    {doc.approvalStatus === 'PENDING' ? (
+                      <button
+                        onClick={() => setRejectionDocId(doc.id)}
+                        className="btn btn-sm btn-danger"
+                      >
+                        Reject
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
+                    )}
                   </td>
                 </tr>
               ))}

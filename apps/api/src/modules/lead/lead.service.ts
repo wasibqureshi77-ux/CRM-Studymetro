@@ -175,7 +175,8 @@ export class LeadService {
           orderBy: { createdAt: 'desc' },
           include: { author: { select: { firstName: true, lastName: true } } }
         },
-        activities: { orderBy: { createdAt: 'desc' } }
+        activities: { orderBy: { createdAt: 'desc' } },
+        documents: { orderBy: { uploadedAt: 'desc' } }
       }
     });
 
@@ -404,7 +405,7 @@ export class LeadService {
           include: { author: { select: { firstName: true, lastName: true } } }
         },
         activities: { orderBy: { createdAt: 'desc' } },
-        documents: { orderBy: { createdAt: 'desc' } },
+        documents: { orderBy: { uploadedAt: 'desc' } },
         followups: { orderBy: { followupDate: 'desc' } }
       }
     });
@@ -417,7 +418,7 @@ export class LeadService {
     const timeline = [
       ...lead.activities.map(a => ({ type: 'activity', date: a.createdAt, data: a })),
       ...lead.notes.map(n => ({ type: 'note', date: n.createdAt, data: n })),
-      ...lead.documents.map(d => ({ type: 'document', date: d.createdAt, data: d })),
+      ...lead.documents.map(d => ({ type: 'document', date: d.uploadedAt, data: d })),
       ...lead.followups.map(f => ({ type: 'followup', date: f.createdAt, data: f }))
     ];
 

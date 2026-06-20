@@ -189,23 +189,25 @@ model Note {
 }
 
 model Document {
-  id             String         @id @default(uuid())
-  leadId         String
-  lead           Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  type           DocumentType
-  fileName       String
-  fileUrl        String
-  fileSize       Int
-  status         ApprovalStatus @default(PENDING)
-  rejectionReason String?
-  approvedById   String?
-  approvedBy     User?          @relation("DocApprover", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedAt     DateTime?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id               String         @id @default(uuid())
+  leadId           String
+  lead             Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  documentType     DocumentType
+  originalFileName String
+  storedFileName   String
+  filePath         String
+  fileSize         Int
+  mimeType         String
+  uploadedAt       DateTime       @default(now())
+  approvalStatus   ApprovalStatus @default(PENDING)
+  rejectionReason  String?
+  approvedById     String?
+  approvedBy       User?          @relation("DocApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt       DateTime?
+  updatedAt        DateTime       @updatedAt
 
   @@index([leadId])
-  @@index([status])
+  @@index([approvalStatus])
 }
 
 model Followup {

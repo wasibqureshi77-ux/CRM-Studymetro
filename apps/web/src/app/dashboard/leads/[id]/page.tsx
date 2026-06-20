@@ -28,10 +28,19 @@ export default function LeadDetailPage() {
   const [followupDate, setFollowupDate] = useState('');
   const [followupNotes, setFollowupNotes] = useState('');
 
-  // Document Upload Mock State
+  // Document Upload State
   const [uploadType, setUploadType] = useState('PASSPORT');
-  const [uploadFileName, setUploadFileName] = useState('');
-  const [uploadFileSize, setUploadFileSize] = useState(1048576); // default 1MB
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
+
+  const addToast = (type: 'success' | 'error', message: string) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  };
 
   // Document Rejection Reason Dialog State
   const [rejectionDocId, setRejectionDocId] = useState<string | null>(null);
@@ -164,29 +173,141 @@ export default function LeadDetailPage() {
     }
   };
 
-  // Upload Document Simulation
+  // Upload Document
   const handleDocumentUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadFileName.trim()) {
-      setErrorMsg('Please enter a mock file name.');
+    if (!selectedFile) {
+      addToast('error', 'Please select a file to upload.');
       return;
     }
     setErrorMsg(null);
-    try {
-      // 1. Get presigned R2 Url
-      const uploadRes = await api.post('/api/v1/documents/upload', {
-        leadId: id,
-        type: uploadType,
-        fileName: uploadFileName,
-        fileSize: Number(uploadFileSize),
-      });
+    setSuccessMsg(null);
+    setUploadProgress(0);
 
-      // 2. Alert and reload
-      setSuccessMsg(`Simulated upload to R2 storage for key: ${uploadRes.document.fileName}`);
-      setUploadFileName('');
-      loadAllData();
+    const getCookie = (name: string): string | undefined => {
+      if (typeof document === 'undefined') return undefined;
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop()?.split(';').shift();
+      return undefined;
+    };
+
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('documentType', uploadType);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}/api/v1/documents/upload/${id}`, true);
+
+    const token = getCookie('sm_session');
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+    const tenantId = getCookie('sm_tenant_id');
+    if (tenantId) {
+      xhr.setRequestHeader('x-tenant-id', tenantId);
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percentage = Math.round((event.loaded / event.total) * 100);
+        setUploadProgress(percentage);
+      }
+    };
+
+    xhr.onload = async () => {
+      setUploadProgress(null);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        addToast('success', 'Document uploaded successfully.');
+        setSuccessMsg('Document uploaded successfully.');
+        setSelectedFile(null);
+        const fileInput = document.getElementById('document-file-input') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+        await loadAllData();
+      } else {
+        let errMsg = 'Document upload failed.';
+        try {
+          const res = JSON.parse(xhr.responseText);
+          errMsg = res.message || errMsg;
+        } catch (err) {
+          errMsg = xhr.responseText || errMsg;
+        }
+        addToast('error', errMsg);
+        setErrorMsg(errMsg);
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploadProgress(null);
+      addToast('error', 'Network error occurred during upload.');
+      setErrorMsg('Network error occurred during upload.');
+    };
+
+    xhr.send(formData);
+  };
+
+  // Download Document
+  const handleDownload = async (docId: string, filename: string) => {
+    setErrorMsg(null);
+    try {
+      const getCookie = (name: string): string | undefined => {
+        if (typeof document === 'undefined') return undefined;
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop()?.split(';').shift();
+        return undefined;
+      };
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const response = await fetch(`${API_BASE}/api/v1/documents/download/${docId}`, {
+        headers: {
+          'Authorization': `Bearer ${getCookie('sm_session')}`,
+          'x-tenant-id': getCookie('sm_tenant_id') || ''
+        }
+      });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      addToast('success', 'Document download initiated.');
     } catch (err: any) {
-      setErrorMsg(err.message || 'Document upload request failed.');
+      addToast('error', err.message || 'Failed to download document.');
+      setErrorMsg(err.message || 'Failed to download document.');
+    }
+  };
+
+  // View Document
+  const handleView = async (docId: string) => {
+    setErrorMsg(null);
+    try {
+      const getCookie = (name: string): string | undefined => {
+        if (typeof document === 'undefined') return undefined;
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop()?.split(';').shift();
+        return undefined;
+      };
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const response = await fetch(`${API_BASE}/api/v1/documents/view/${docId}`, {
+        headers: {
+          'Authorization': `Bearer ${getCookie('sm_session')}`,
+          'x-tenant-id': getCookie('sm_tenant_id') || ''
+        }
+      });
+      if (!response.ok) throw new Error('Failed to open document');
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      addToast('success', 'Document opened in new tab.');
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to open document.');
+      setErrorMsg(err.message || 'Failed to open document.');
     }
   };
 
@@ -195,11 +316,13 @@ export default function LeadDetailPage() {
     setErrorMsg(null);
     try {
       await api.patch(`/api/v1/documents/${docId}/approve`, {
-        status: 'APPROVED',
+        approvalStatus: 'APPROVED',
       });
+      addToast('success', 'Document marked as APPROVED.');
       setSuccessMsg('Document marked as APPROVED.');
       loadAllData();
     } catch (err: any) {
+      addToast('error', err.message || 'Approval action failed.');
       setErrorMsg(err.message || 'Approval action failed.');
     }
   };
@@ -210,14 +333,16 @@ export default function LeadDetailPage() {
     setErrorMsg(null);
     try {
       await api.patch(`/api/v1/documents/${rejectionDocId}/approve`, {
-        status: 'REJECTED',
+        approvalStatus: 'REJECTED',
         rejectionReason: rejectionReason,
       });
+      addToast('success', 'Document marked as REJECTED.');
       setSuccessMsg('Document marked as REJECTED.');
       setRejectionDocId(null);
       setRejectionReason('');
       loadAllData();
     } catch (err: any) {
+      addToast('error', err.message || 'Rejection action failed.');
       setErrorMsg(err.message || 'Rejection action failed.');
     }
   };
@@ -585,9 +710,9 @@ export default function LeadDetailPage() {
                   if (type === 'document') {
                     return (
                       <div key={index} className="timeline-node" style={{ borderLeftColor: '#0c4a6e' }}>
-                        <div className="timeline-meta">📁 DOCUMENT upload: {node.data.type} ({node.data.fileName}) at {dateLabel}</div>
+                        <div className="timeline-meta">📁 DOCUMENT upload: {node.data.documentType} ({node.data.originalFileName}) at {dateLabel}</div>
                         <div className="timeline-desc">
-                          Status: <span className="badge" style={{ backgroundColor: '#f0f9ff', color: '#0369a1' }}>{node.data.status}</span>
+                          Status: <span className="badge" style={{ backgroundColor: '#f0f9ff', color: '#0369a1' }}>{node.data.approvalStatus}</span>
                         </div>
                       </div>
                     );
@@ -642,9 +767,9 @@ export default function LeadDetailPage() {
               {/* Document upload form */}
               <form onSubmit={handleDocumentUpload} style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
                   <div style={{ fontWeight: 700, fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Simulated R2 File Ingestion
+                    Local File Ingestion
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>Document Class Type</label>
                       <select className="form-control" value={uploadType} onChange={(e) => setUploadType(e.target.value)}>
@@ -662,21 +787,32 @@ export default function LeadDetailPage() {
                     </div>
 
                     <div className="form-group" style={{ flex: 2 }}>
-                      <label>Mock Filename</label>
+                      <label>Choose File</label>
                       <input
-                        type="text"
+                        id="document-file-input"
+                        type="file"
                         className="form-control"
-                        placeholder="passport_scan_final.pdf"
-                        value={uploadFileName}
-                        onChange={(e) => setUploadFileName(e.target.value)}
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            setSelectedFile(e.target.files[0]);
+                          }
+                        }}
                         required
                       />
                     </div>
                   </div>
 
-                  <button type="submit" className="btn btn-primary" style={{ width: '160px' }}>
-                    📤 Request R2 Presigned Upload
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <button type="submit" className="btn btn-primary" style={{ width: '160px' }}>
+                      📤 Upload Document
+                    </button>
+                    {uploadProgress !== null && (
+                      <div style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: '9999px', height: '8px', overflow: 'hidden' }}>
+                        <div style={{ backgroundColor: 'var(--primary-color)', height: '100%', width: `${uploadProgress}%`, transition: 'width 0.1s ease-out' }}></div>
+                      </div>
+                    )}
+                  </div>
                 </form>
 
               {/* Active Documents List */}
@@ -692,58 +828,72 @@ export default function LeadDetailPage() {
                   <thead>
                     <tr>
                       <th>Document Type</th>
-                      <th>File details</th>
+                      <th>File Name</th>
+                      <th>Upload Date</th>
+                      <th>File Size</th>
                       <th>Approval Status</th>
-                      <th>Actions</th>
+                      <th>View</th>
+                      <th>Download</th>
+                      <th>Approve</th>
+                      <th>Reject</th>
                     </tr>
                   </thead>
                   <tbody>
                     {lead.documents?.map((doc: any) => (
                       <tr key={doc.id}>
-                        <td><strong>{doc.type}</strong></td>
-                        <td>
-                          <a href={doc.fileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
-                            {doc.fileName}
-                          </a>
-                          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
-                            {(doc.fileSize / 1024).toFixed(1)} KB — Uploaded: {new Date(doc.createdAt).toLocaleDateString()}
-                          </div>
-                        </td>
+                        <td><strong>{doc.documentType}</strong></td>
+                        <td><span style={{ fontFamily: 'monospace', fontSize: '11px' }}>{doc.originalFileName}</span></td>
+                        <td>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
+                        <td>{(doc.fileSize / 1024).toFixed(1)} KB</td>
                         <td>
                           <span
                             className="badge"
                             style={{
                               backgroundColor:
-                                doc.status === 'APPROVED' ? '#dcfce7' : doc.status === 'REJECTED' ? '#fee2e2' : '#fef9c3',
+                                doc.approvalStatus === 'APPROVED' ? '#dcfce7' : doc.approvalStatus === 'REJECTED' ? '#fee2e2' : '#fef9c3',
                               color:
-                                doc.status === 'APPROVED' ? '#166534' : doc.status === 'REJECTED' ? '#991b1b' : '#854d0e',
+                                doc.approvalStatus === 'APPROVED' ? '#166534' : doc.approvalStatus === 'REJECTED' ? '#991b1b' : '#854d0e',
                             }}
                           >
-                            {doc.status}
+                            {doc.approvalStatus}
                           </span>
                           {doc.rejectionReason && (
-                            <div style={{ fontSize: '9px', color: 'var(--danger-color)', marginTop: '2px' }}>
+                            <div style={{ fontSize: '9px', color: 'var(--danger-color)', marginTop: '2px', fontStyle: 'italic' }}>
                               Reason: {doc.rejectionReason}
                             </div>
                           )}
                         </td>
                         <td>
-                          {doc.status === 'PENDING' ? (
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <button
-                                onClick={() => handleApproveDocument(doc.id)}
-                                className="btn btn-sm"
-                                style={{ backgroundColor: 'var(--success-color)', color: '#fff', borderColor: 'var(--success-color)' }}
-                              >
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => setRejectionDocId(doc.id)}
-                                className="btn btn-sm btn-danger"
-                              >
-                                Reject
-                              </button>
-                            </div>
+                          <button onClick={() => handleView(doc.id)} className="btn btn-sm">
+                            👁️ View
+                          </button>
+                        </td>
+                        <td>
+                          <button onClick={() => handleDownload(doc.id, doc.originalFileName)} className="btn btn-sm">
+                            📥 Download
+                          </button>
+                        </td>
+                        <td>
+                          {doc.approvalStatus === 'PENDING' ? (
+                            <button
+                              onClick={() => handleApproveDocument(doc.id)}
+                              className="btn btn-sm"
+                              style={{ backgroundColor: 'var(--success-color)', color: '#fff', borderColor: 'var(--success-color)' }}
+                            >
+                              Approve
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          {doc.approvalStatus === 'PENDING' ? (
+                            <button
+                              onClick={() => setRejectionDocId(doc.id)}
+                              className="btn btn-sm btn-danger"
+                            >
+                              Reject
+                            </button>
                           ) : (
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
                           )}
@@ -828,6 +978,28 @@ export default function LeadDetailPage() {
           </div>
         </div>
       )}
+      {/* Toast container */}
+      <div style={{ position: 'fixed', bottom: '20px', right: '20px', display: 'flex', flexDirection: 'column', gap: '10px', zIndex: 9999 }}>
+        {toasts.map((t) => (
+          <div key={t.id} style={{
+            padding: '12px 16px',
+            borderRadius: '6px',
+            color: '#fff',
+            backgroundColor: t.type === 'success' ? '#10b981' : '#ef4444',
+            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
+            fontSize: '13px',
+            fontWeight: 500,
+            minWidth: '250px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            animation: 'slideIn 0.2s ease-out'
+          }}>
+            <span>{t.type === 'success' ? '✓' : '⚠️'} {t.message}</span>
+            <button onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '14px', marginLeft: '10px' }}>×</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
