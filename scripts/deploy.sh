@@ -13,7 +13,7 @@ npm install
 
 echo "🗄️ Running Prisma migrations..."
 cd apps/api
-npx prisma migrate deploy
+npx prisma generate
 cd ../..
 
 echo "🔨 Building API..."
