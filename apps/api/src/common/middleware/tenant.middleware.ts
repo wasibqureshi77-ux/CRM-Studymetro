@@ -12,6 +12,17 @@ export class TenantMiddleware implements NestMiddleware {
     let tenantIdentifier = req.headers['x-tenant-id'] as string;
     const requestPath = req.originalUrl || req.path || req.url || '';
 
+    // Fast-path bypass for auth and tracker SDK requests
+    if (
+      requestPath.startsWith('/api/v1/auth') ||
+      requestPath.startsWith('/api/v1/tracker') ||
+      requestPath.startsWith('api/v1/tracker') ||
+      requestPath.includes('metro-tracker.js')
+    ) {
+      req.tenantId = 'studymetro-global';
+      return next();
+    }
+
     if (!tenantIdentifier) {
       const hostname = req.hostname;
       // Simple subdomain check, e.g. "orgname.studymetro.com" -> "orgname"
@@ -22,17 +33,6 @@ export class TenantMiddleware implements NestMiddleware {
     }
 
     if (!tenantIdentifier) {
-      // Allow auth and tracker routes to skip resolution
-      if (
-        requestPath.startsWith('/api/v1/auth') ||
-        requestPath.startsWith('/api/v1/tracker') ||
-        requestPath.startsWith('api/v1/tracker') ||
-        requestPath.indexOf('metro-tracker.js') > -1 ||
-        requestPath.indexOf('/tracker') > -1
-      ) {
-        req.tenantId = 'studymetro-global';
-        return next();
-      }
       throw new HttpException('Tenant context missing', HttpStatus.BAD_REQUEST);
     }
 

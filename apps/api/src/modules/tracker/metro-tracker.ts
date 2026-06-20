@@ -188,6 +188,8 @@ export const METRO_TRACKER_SDK = `(function() {
             fields.course = val;
           } else if (name.indexOf('intake') > -1 || name.indexOf('term') > -1 || name.indexOf('semester') > -1) {
             fields.intake = val;
+          } else if (name.indexOf('message') > -1 || name.indexOf('msg') > -1 || name.indexOf('comment') > -1 || name.indexOf('query') > -1) {
+            fields.message = val;
           }
         }
 
