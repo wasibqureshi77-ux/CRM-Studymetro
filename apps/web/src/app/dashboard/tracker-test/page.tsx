@@ -10,7 +10,7 @@ export default function TrackerTestPage() {
   const [recentLeads, setRecentLeads] = useState<any[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [message, setMessage] = useState('');
-  const [activeFormTab, setActiveFormTab] = useState<'contact' | 'consult' | 'admission' | 'custom'>('contact');
+  const [activeFormTab, setActiveFormTab] = useState<'contact' | 'consult' | 'admission' | 'custom' | 'leadForm' | 'contactPageForm' | 'modalLeadForm'>('contact');
 
   // Verification checks state
   const [verificationReport, setVerificationReport] = useState({
@@ -194,30 +194,48 @@ export default function TrackerTestPage() {
             </h3>
             
             {/* Form Selection Tabs */}
-            <div style={{ display: 'flex', gap: '4px', background: '#f8fafc', padding: '4px', borderRadius: '8px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '4px', background: '#f8fafc', padding: '4px', borderRadius: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
               <button 
                 type="button" 
                 onClick={() => setActiveFormTab('contact')}
-                style={{ flex: 1, padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'contact' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'contact' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
+                style={{ flex: '1 1 auto', padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'contact' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'contact' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
                 Contact Form
               </button>
               <button 
                 type="button" 
                 onClick={() => setActiveFormTab('consult')}
-                style={{ flex: 1, padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'consult' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'consult' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
+                style={{ flex: '1 1 auto', padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'consult' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'consult' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
                 Consultation
               </button>
               <button 
                 type="button" 
                 onClick={() => setActiveFormTab('admission')}
-                style={{ flex: 1, padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'admission' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'admission' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
+                style={{ flex: '1 1 auto', padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'admission' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'admission' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
                 Admission
               </button>
               <button 
                 type="button" 
                 onClick={() => setActiveFormTab('custom')}
-                style={{ flex: 1, padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'custom' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'custom' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
+                style={{ flex: '1 1 auto', padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'custom' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'custom' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
                 data-metro
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setActiveFormTab('leadForm')}
+                style={{ flex: '1 1 auto', padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'leadForm' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'leadForm' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
+                leadForm
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setActiveFormTab('contactPageForm')}
+                style={{ flex: '1 1 auto', padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'contactPageForm' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'contactPageForm' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
+                contactPageForm
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setActiveFormTab('modalLeadForm')}
+                style={{ flex: '1 1 auto', padding: '8px 4px', fontSize: '11px', border: 'none', background: activeFormTab === 'modalLeadForm' ? '#fff' : 'transparent', color: '#0f172a', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', boxShadow: activeFormTab === 'modalLeadForm' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none' }}>
+                modalLeadForm
               </button>
             </div>
 
@@ -256,6 +274,36 @@ export default function TrackerTestPage() {
               <form data-metro-capture="true" onSubmit={(e) => handleFormSubmission(e, 'data-metro-capture Form')} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ fontSize: '11px', color: '#64748b', background: '#f8fafc', padding: '6px 12px', borderRadius: '6px', borderLeft: '3px solid #3b82f6' }}>
                   Targeted by Attribute: <code>data-metro-capture="true"</code>
+                </div>
+                {renderFormFields()}
+              </form>
+            )}
+
+            {/* leadForm */}
+            {activeFormTab === 'leadForm' && (
+              <form id="leadForm" onSubmit={(e) => handleFormSubmission(e, 'leadForm')} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', background: '#f8fafc', padding: '6px 12px', borderRadius: '6px', borderLeft: '3px solid #3b82f6' }}>
+                  Targeted by ID: <code>id="leadForm"</code>
+                </div>
+                {renderFormFields()}
+              </form>
+            )}
+
+            {/* contactPageForm */}
+            {activeFormTab === 'contactPageForm' && (
+              <form name="contactPageForm" onSubmit={(e) => handleFormSubmission(e, 'contactPageForm')} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', background: '#f8fafc', padding: '6px 12px', borderRadius: '6px', borderLeft: '3px solid #3b82f6' }}>
+                  Targeted by Name: <code>name="contactPageForm"</code>
+                </div>
+                {renderFormFields()}
+              </form>
+            )}
+
+            {/* modalLeadForm */}
+            {activeFormTab === 'modalLeadForm' && (
+              <form id="modalLeadForm" onSubmit={(e) => handleFormSubmission(e, 'modalLeadForm')} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', background: '#f8fafc', padding: '6px 12px', borderRadius: '6px', borderLeft: '3px solid #3b82f6' }}>
+                  Targeted by ID: <code>id="modalLeadForm"</code>
                 </div>
                 {renderFormFields()}
               </form>

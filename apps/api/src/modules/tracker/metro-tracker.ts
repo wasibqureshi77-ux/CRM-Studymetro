@@ -145,70 +145,79 @@ export const METRO_TRACKER_SDK = `(function() {
 
     setupFormTracking: function() {
       document.addEventListener('submit', function(event) {
-        var form = event.target;
-        if (!form) return;
+        try {
+          var form = event.target;
+          if (!form || typeof form.getAttribute !== 'function') return;
 
-        var formId = (form.id || '').toLowerCase();
-        var formClass = (form.className || '').toLowerCase();
-        var formName = String(
-          form.getAttribute('name') || ''
-        ).toLowerCase();
-        var formAction = (form.getAttribute('action') || '').toLowerCase();
-        var isMetroCapture = form.getAttribute('data-metro-capture') === 'true';
+          var formId = String(form.id || '').toLowerCase();
+          var formClass = String(form.className || '').toLowerCase();
+          var formName = String(form.getAttribute('name') || '').toLowerCase();
+          var formAction = String(form.getAttribute('action') || '').toLowerCase();
+          var isMetroCapture = form.getAttribute('data-metro-capture') === 'true';
 
-        var matchesContact = formId.indexOf('contact') > -1 || formClass.indexOf('contact') > -1 || formName.indexOf('contact') > -1 || formAction.indexOf('contact') > -1;
-        var matchesConsult = formId.indexOf('consult') > -1 || formClass.indexOf('consult') > -1 || formName.indexOf('consult') > -1 || formAction.indexOf('consult') > -1;
-        var matchesAdmission = formId.indexOf('admission') > -1 || formClass.indexOf('admission') > -1 || formName.indexOf('admission') > -1 || formAction.indexOf('admission') > -1;
+          var matchesContact = formId.indexOf('contact') > -1 || formClass.indexOf('contact') > -1 || formName.indexOf('contact') > -1 || formAction.indexOf('contact') > -1;
+          var matchesConsult = formId.indexOf('consult') > -1 || formClass.indexOf('consult') > -1 || formName.indexOf('consult') > -1 || formAction.indexOf('consult') > -1;
+          var matchesAdmission = formId.indexOf('admission') > -1 || formClass.indexOf('admission') > -1 || formName.indexOf('admission') > -1 || formAction.indexOf('admission') > -1;
+          var matchesLead = formId.indexOf('lead') > -1 || formClass.indexOf('lead') > -1 || formName.indexOf('lead') > -1 || formAction.indexOf('lead') > -1;
 
-        if (!isMetroCapture && !matchesContact && !matchesConsult && !matchesAdmission) {
-          return;
-        }
-
-        var fields = {};
-        var inputs = form.querySelectorAll('input, select, textarea');
-        
-        for (var i = 0; i < inputs.length; i++) {
-          var input = inputs[i];
-          var name = (input.name || input.id || '').toLowerCase();
-          var val = input.value;
-
-          if (!name || !val) continue;
-
-          if (name.indexOf('email') > -1) {
-            fields.email = val;
-          } else if (name.indexOf('phone') > -1 || name.indexOf('tel') > -1 || name.indexOf('mobile') > -1 || name.indexOf('contact') > -1) {
-            fields.phone = val;
-          } else if (name.indexOf('name') > -1 || name.indexOf('fname') > -1 || name.indexOf('lname') > -1) {
-            if (fields.name) {
-              fields.name += ' ' + val;
-            } else {
-              fields.name = val;
-            }
-          } else if (name.indexOf('country') > -1 || name.indexOf('destination') > -1) {
-            fields.country = val;
-          } else if (name.indexOf('course') > -1 || name.indexOf('program') > -1 || name.indexOf('degree') > -1 || name.indexOf('major') > -1) {
-            fields.course = val;
-          } else if (name.indexOf('intake') > -1 || name.indexOf('term') > -1 || name.indexOf('semester') > -1) {
-            fields.intake = val;
-          } else if (name.indexOf('message') > -1 || name.indexOf('msg') > -1 || name.indexOf('comment') > -1 || name.indexOf('query') > -1) {
-            fields.message = val;
+          if (!isMetroCapture && !matchesContact && !matchesConsult && !matchesAdmission && !matchesLead) {
+            return;
           }
-        }
 
-        if (fields.email || fields.phone) {
-          var utm = getUtmParams();
-          sendRequest('/api/v1/tracker/form', {
-            visitorId: visitorId,
-            sessionId: sessionId,
-            formFields: fields,
-            url: window.location.href,
-            referrer: document.referrer || null,
-            utmSource: utm.utm_source || null,
-            utmMedium: utm.utm_medium || null,
-            utmCampaign: utm.utm_campaign || null,
-            utmContent: utm.utm_content || null,
-            utmTerm: utm.utm_term || null
-          });
+          var fields = {};
+          var inputs = typeof form.querySelectorAll === 'function' ? form.querySelectorAll('input, select, textarea') : [];
+          
+          for (var i = 0; i < inputs.length; i++) {
+            var input = inputs[i];
+            if (!input) continue;
+            var name = '';
+            try {
+              name = String(input.getAttribute('name') || input.id || '').toLowerCase();
+            } catch(e) {
+              continue;
+            }
+            var val = input.value;
+
+            if (!name || !val) continue;
+
+            if (name.indexOf('email') > -1) {
+              fields.email = val;
+            } else if (name.indexOf('phone') > -1 || name.indexOf('tel') > -1 || name.indexOf('mobile') > -1 || name.indexOf('contact') > -1) {
+              fields.phone = val;
+            } else if (name.indexOf('name') > -1 || name.indexOf('fname') > -1 || name.indexOf('lname') > -1) {
+              if (fields.name) {
+                fields.name += ' ' + val;
+              } else {
+                fields.name = val;
+              }
+            } else if (name.indexOf('country') > -1 || name.indexOf('destination') > -1) {
+              fields.country = val;
+            } else if (name.indexOf('course') > -1 || name.indexOf('program') > -1 || name.indexOf('degree') > -1 || name.indexOf('major') > -1) {
+              fields.course = val;
+            } else if (name.indexOf('intake') > -1 || name.indexOf('term') > -1 || name.indexOf('semester') > -1) {
+              fields.intake = val;
+            } else if (name.indexOf('message') > -1 || name.indexOf('msg') > -1 || name.indexOf('comment') > -1 || name.indexOf('query') > -1) {
+              fields.message = val;
+            }
+          }
+
+          if (fields.email || fields.phone) {
+            var utm = getUtmParams();
+            sendRequest('/api/v1/tracker/form', {
+              visitorId: visitorId,
+              sessionId: sessionId,
+              formFields: fields,
+              url: window.location.href,
+              referrer: document.referrer || null,
+              utmSource: utm.utm_source || null,
+              utmMedium: utm.utm_medium || null,
+              utmCampaign: utm.utm_campaign || null,
+              utmContent: utm.utm_content || null,
+              utmTerm: utm.utm_term || null
+            });
+          }
+        } catch (e) {
+          // Add defensive guards so malformed DOM elements cannot break form tracking
         }
       }, true);
     }
