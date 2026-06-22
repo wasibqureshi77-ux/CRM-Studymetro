@@ -150,7 +150,9 @@ export const METRO_TRACKER_SDK = `(function() {
 
         var formId = (form.id || '').toLowerCase();
         var formClass = (form.className || '').toLowerCase();
-        var formName = (form.name || '').toLowerCase();
+        var formName = String(
+          form.getAttribute('name') || ''
+        ).toLowerCase();
         var formAction = (form.getAttribute('action') || '').toLowerCase();
         var isMetroCapture = form.getAttribute('data-metro-capture') === 'true';
 
