@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Req,
@@ -11,34 +12,28 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
-  NotFoundException
+  NotFoundException,
+  Query
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
-import { DocumentService } from './document.service';
-import { ApproveDocumentDto, UploadDocumentDto } from './dto/document.dto';
+import { LeadDocumentService } from './lead-document.service';
+import { UpdateDocumentStatusDto, UploadLeadDocumentDto } from './dto/lead-document.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
-import { ConfigService } from '@nestjs/config';
-import { decryptPassword } from './utils/encryption.util';
-import { PDFDocument } from 'pdf-lib';
-import { decryptPDF } from '@pdfsmaller/pdf-decrypt';
+import { PrismaService } from '../../prisma/prisma.service';
 
-const UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'documents');
+const UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads');
 
 const multerConfig = {
   storage: diskStorage({
     destination: (req, file, cb) => {
-      const leadId = req.params.leadId;
-      if (!leadId) {
-        return cb(new BadRequestException('Lead ID param is missing'), '');
-      }
-      const dest = path.join(UPLOAD_ROOT, leadId);
+      const dest = path.join(UPLOAD_ROOT, 'temp');
       if (!fs.existsSync(dest)) {
         fs.mkdirSync(dest, { recursive: true });
       }
@@ -46,9 +41,7 @@ const multerConfig = {
     },
     filename: (req, file, cb) => {
       const timestamp = Math.floor(Date.now() / 1000);
-      const original = path.basename(file.originalname);
-      const sanitized = original.replace(/[^a-zA-Z0-9.-]/g, '_');
-      cb(null, `${timestamp}-${sanitized}`);
+      cb(null, `${timestamp}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`);
     }
   }),
   limits: {
@@ -72,15 +65,46 @@ const multerConfig = {
 @Controller('api/v1/documents')
 export class DocumentController {
   constructor(
-    private readonly documentService: DocumentService,
-    private readonly configService: ConfigService
+    private readonly documentService: LeadDocumentService,
+    private readonly prisma: PrismaService
   ) {}
 
   @Permissions('docs:read')
   @Get()
   async findAll(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId!;
-    return this.documentService.findAll(tenantId);
+    return this.prisma.leadDocument.findMany({
+      where: {
+        isCurrent: true,
+        lead: {
+          tenantId,
+          deletedAt: null
+        }
+      },
+      include: {
+        lead: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    });
+  }
+
+  @Permissions('docs:read')
+  @Get('expiring')
+  async getExpiring(
+    @Req() req: AuthenticatedRequest,
+    @Query('days') days?: string
+  ) {
+    const tenantId = req.tenantId!;
+    const threshold = days ? parseInt(days, 10) : 90;
+    return this.documentService.getExpiringDocuments(tenantId, threshold);
   }
 
   @Permissions('docs:write')
@@ -89,16 +113,14 @@ export class DocumentController {
   async upload(
     @Req() req: AuthenticatedRequest,
     @Param('leadId') leadId: string,
-    @Body() dto: UploadDocumentDto,
+    @Body() dto: UploadLeadDocumentDto,
     @UploadedFile() file: Express.Multer.File
   ) {
     if (!file) {
       throw new BadRequestException('No file uploaded or file was rejected');
     }
-    const tenantId = req.tenantId!;
     const actorId = req.user!.id;
     
-    // Validate documentType is present
     if (!dto.documentType) {
       if (file.path && fs.existsSync(file.path)) {
         fs.unlinkSync(file.path);
@@ -107,7 +129,13 @@ export class DocumentController {
     }
 
     try {
-      return await this.documentService.upload(file, leadId, dto.documentType, tenantId, actorId, dto.pdfPassword);
+      return await this.documentService.uploadDocument(
+        leadId,
+        dto.documentType,
+        file,
+        actorId,
+        dto.expiryDate
+      );
     } catch (error) {
       if (file.path && fs.existsSync(file.path)) {
         fs.unlinkSync(file.path);
@@ -116,97 +144,113 @@ export class DocumentController {
     }
   }
 
-  @Permissions('docs:read')
-  @Get('download/:documentId')
-  async download(
-    @Param('documentId') documentId: string,
-    @Req() req: AuthenticatedRequest,
-    @Res() res: Response
-  ) {
-    const tenantId = req.tenantId!;
-    const document = await this.documentService.findById(documentId, tenantId);
-
-    const resolvedPath = path.resolve(document.filePath);
-    if (!resolvedPath.startsWith(UPLOAD_ROOT)) {
-      throw new BadRequestException('Path traversal attempt blocked');
-    }
-
-    if (!fs.existsSync(resolvedPath)) {
-      throw new NotFoundException('Physical file not found');
-    }
-
-    if (document.isPasswordProtected && document.mimeType === 'application/pdf') {
-      const jwtSecret = this.configService.get<string>('JWT_SECRET') || 'study-metro-very-secure-jwt-key-2026-sprint1';
-      const decryptedPassword = decryptPassword(document.pdfPassword, jwtSecret);
-      const fileBytes = fs.readFileSync(resolvedPath);
-      try {
-        const decryptedPdfBytes = await decryptPDF(new Uint8Array(fileBytes), decryptedPassword);
-        
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(document.originalFileName)}"`);
-        res.setHeader('Content-Length', decryptedPdfBytes.length);
-        res.send(Buffer.from(decryptedPdfBytes));
-        return;
-      } catch (err) {
-        // Fallback to normal download on error
-      }
-    }
-
-    res.download(resolvedPath, document.originalFileName);
-  }
-
-  @Permissions('docs:read')
-  @Get('view/:documentId')
-  async view(
-    @Param('documentId') documentId: string,
-    @Req() req: AuthenticatedRequest,
-    @Res() res: Response
-  ) {
-    const tenantId = req.tenantId!;
-    const document = await this.documentService.findById(documentId, tenantId);
-
-    const resolvedPath = path.resolve(document.filePath);
-    if (!resolvedPath.startsWith(UPLOAD_ROOT)) {
-      throw new BadRequestException('Path traversal attempt blocked');
-    }
-
-    if (!fs.existsSync(resolvedPath)) {
-      throw new NotFoundException('Physical file not found');
-    }
-
-    if (document.isPasswordProtected && document.mimeType === 'application/pdf') {
-      const jwtSecret = this.configService.get<string>('JWT_SECRET') || 'study-metro-very-secure-jwt-key-2026-sprint1';
-      const decryptedPassword = decryptPassword(document.pdfPassword, jwtSecret);
-      const fileBytes = fs.readFileSync(resolvedPath);
-      try {
-        const decryptedPdfBytes = await decryptPDF(new Uint8Array(fileBytes), decryptedPassword);
-        
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.originalFileName)}"`);
-        res.setHeader('Content-Length', decryptedPdfBytes.length);
-        res.send(Buffer.from(decryptedPdfBytes));
-        return;
-      } catch (err) {
-        // Fallback to normal view on error
-      }
-    }
-
-    res.setHeader('Content-Type', document.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.originalFileName)}"`);
-
-    const fileStream = fs.createReadStream(resolvedPath);
-    fileStream.pipe(res);
-  }
-
   @Permissions('docs:verify')
-  @Patch(':id/approve')
+  @Patch(':id/approve') // mapped to /approve for compatibility with front-end API requests
   async approve(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
-    @Body() dto: ApproveDocumentDto
+    @Body() dto: { approvalStatus: string; rejectionReason?: string }
   ) {
-    const tenantId = req.tenantId!;
     const actorId = req.user!.id;
-    return this.documentService.approve(id, dto, tenantId, actorId);
+    const mappedStatus = dto.approvalStatus === 'APPROVED' ? 'VERIFIED' : 'REJECTED';
+    return this.documentService.setDocumentStatus(id, mappedStatus as any, actorId, dto.rejectionReason);
+  }
+
+  @Permissions('docs:verify')
+  @Patch(':id/status')
+  async updateStatus(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateDocumentStatusDto
+  ) {
+    const actorId = req.user!.id;
+    return this.documentService.setDocumentStatus(id, dto.status, actorId, dto.note);
+  }
+
+  @Permissions('docs:write')
+  @Delete(':id')
+  async deleteDoc(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string
+  ) {
+    const actorId = req.user!.id;
+    return this.documentService.deleteDocument(id, actorId);
+  }
+
+  @Permissions('docs:read')
+  @Get('lead/:leadId')
+  async getLeadDocs(
+    @Param('leadId') leadId: string
+  ) {
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) throw new NotFoundException('Lead not found');
+    return this.documentService.generateChecklist(leadId, lead.leadCategory);
+  }
+
+  @Permissions('docs:read')
+  @Get('history/:leadId/:type')
+  async getHistory(
+    @Param('leadId') leadId: string,
+    @Param('type') type: string
+  ) {
+    return this.documentService.getDocumentHistory(leadId, type);
+  }
+
+  @Permissions('leads:write')
+  @Post('request-missing/:leadId')
+  async requestMissing(
+    @Req() req: AuthenticatedRequest,
+    @Param('leadId') leadId: string
+  ) {
+    const actorId = req.user!.id;
+    return this.documentService.requestMissingDocuments(leadId, actorId);
+  }
+
+  @Permissions('docs:read')
+  @Get('download/:id')
+  async download(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response
+  ) {
+    const doc = await this.prisma.leadDocument.findUnique({
+      where: { id }
+    });
+    if (!doc || !doc.filePath) {
+      throw new NotFoundException('Document file not found');
+    }
+
+    const resolvedPath = path.resolve(UPLOAD_ROOT, doc.filePath);
+    if (!fs.existsSync(resolvedPath)) {
+      throw new NotFoundException('Physical file not found');
+    }
+
+    res.download(resolvedPath, doc.originalFileName || 'document');
+  }
+
+  @Permissions('docs:read')
+  @Get('view/:id')
+  async view(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response
+  ) {
+    const doc = await this.prisma.leadDocument.findUnique({
+      where: { id }
+    });
+    if (!doc || !doc.filePath) {
+      throw new NotFoundException('Document file not found');
+    }
+
+    const resolvedPath = path.resolve(UPLOAD_ROOT, doc.filePath);
+    if (!fs.existsSync(resolvedPath)) {
+      throw new NotFoundException('Physical file not found');
+    }
+
+    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.originalFileName || 'file')}"`);
+
+    const fileStream = fs.createReadStream(resolvedPath);
+    fileStream.pipe(res);
   }
 }

@@ -66,6 +66,38 @@ export class CreateLeadDto {
   branchId?: string;
 
   @IsOptional()
+  @IsString()
+  leadCategory?: string;
+
+  @IsOptional()
+  @IsString()
+  preferredCountry?: string;
+
+  @IsOptional()
+  @IsString()
+  planningTimeline?: string;
+
+  @IsOptional()
+  @IsString()
+  intendedIntake?: string;
+
+  @IsOptional()
+  @IsString()
+  englishLevel?: string;
+
+  @IsOptional()
+  @IsString()
+  targetScore?: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: string;
+
+  @IsOptional()
+  @IsString()
+  courseInterest?: string;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => CreateStudentProfileDto)
   studentProfile?: CreateStudentProfileDto;
@@ -95,6 +127,38 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsEnum(LeadSource)
   source?: LeadSource;
+
+  @IsOptional()
+  @IsString()
+  leadCategory?: string;
+
+  @IsOptional()
+  @IsString()
+  preferredCountry?: string;
+
+  @IsOptional()
+  @IsString()
+  planningTimeline?: string;
+
+  @IsOptional()
+  @IsString()
+  intendedIntake?: string;
+
+  @IsOptional()
+  @IsString()
+  englishLevel?: string;
+
+  @IsOptional()
+  @IsString()
+  targetScore?: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: string;
+
+  @IsOptional()
+  @IsString()
+  courseInterest?: string;
 
   @IsOptional()
   @ValidateNested()

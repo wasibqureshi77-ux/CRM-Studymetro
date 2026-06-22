@@ -9,12 +9,13 @@ export default function DashboardPage() {
   const [leads, setLeads] = useState<any[]>([]);
   const [followups, setFollowups] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
+  const [expiringDocs, setExpiringDocs] = useState<any[]>([]);
+  const [pendingVerificationCount, setPendingVerificationCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // Modal display states
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
   const [showFollowupModal, setShowFollowupModal] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
 
   // Modal form states
   const [leadForm, setLeadForm] = useState({
@@ -25,7 +26,8 @@ export default function DashboardPage() {
     country: '',
     course: '',
     intake: '',
-    source: 'MANUAL'
+    source: 'MANUAL',
+    leadCategory: 'STUDY_ABROAD'
   });
 
   const [followupForm, setFollowupForm] = useState({
@@ -34,25 +36,26 @@ export default function DashboardPage() {
     notes: ''
   });
 
-  const [uploadForm, setUploadForm] = useState({
-    leadId: '',
-    type: 'PASSPORT',
-    fileName: '',
-  });
-
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const loadData = async () => {
     try {
-      const [leadsData, followupsData, activitiesData] = await Promise.all([
+      const [leadsData, followupsData, activitiesData, expiringData, allDocs] = await Promise.all([
         api.get('/api/v1/leads'),
         api.get('/api/v1/followups'),
-        api.get('/api/v1/leads/meta/activities')
+        api.get('/api/v1/leads/meta/activities'),
+        api.get('/api/v1/documents/expiring?days=90'),
+        api.get('/api/v1/documents')
       ]);
       setLeads(leadsData || []);
       setFollowups(followupsData || []);
       setActivities(activitiesData || []);
+      setExpiringDocs(expiringData || []);
+
+      // Filter documents where status is UPLOADED (Pending counselor verification)
+      const pendingCount = (allDocs || []).filter((d: any) => d.status === 'UPLOADED').length;
+      setPendingVerificationCount(pendingCount);
     } catch (err) {
       console.error('Failed to load dashboard data', err);
     } finally {
@@ -80,13 +83,13 @@ export default function DashboardPage() {
         phone: leadForm.phone,
         email: leadForm.email,
         source: leadForm.source,
+        leadCategory: leadForm.leadCategory,
         studentProfile: {
           targetCountry: leadForm.country,
           targetCourse: leadForm.course,
           intake: leadForm.intake
         }
       });
-      // Success, close and reload
       setShowNewLeadModal(false);
       setLeadForm({
         firstName: '',
@@ -96,7 +99,8 @@ export default function DashboardPage() {
         country: '',
         course: '',
         intake: '',
-        source: 'MANUAL'
+        source: 'MANUAL',
+        leadCategory: 'STUDY_ABROAD'
       });
       await loadData();
     } catch (err: any) {
@@ -131,32 +135,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleUploadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!uploadForm.leadId || !uploadForm.fileName) {
-      setErrorMsg('Please select a student and specify the file name.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMsg('');
-    try {
-      await api.post('/api/v1/documents/upload', {
-        leadId: uploadForm.leadId,
-        type: uploadForm.type,
-        fileName: uploadForm.fileName,
-        fileSize: 102400 // mock 100KB
-      });
-      setShowUploadModal(false);
-      setUploadForm({ leadId: '', type: 'PASSPORT', fileName: '' });
-      await loadData();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to request document upload.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   if (loading) {
     return (
       <div style={{ padding: '20px', fontWeight: 600 }}>
@@ -166,14 +144,15 @@ export default function DashboardPage() {
   }
 
   // Calculate Metrics
-  const totalLeads = leads.length;
-  const newLeads = leads.filter(l => l.status === 'NEW').length;
-  const applications = leads.filter(l => l.status === 'APPLICATION_SUBMITTED').length;
-  const offerLetters = leads.filter(l => l.status === 'OFFER_LETTER_RECEIVED').length;
-  const visaProcessing = leads.filter(l => l.status === 'VISA_PROCESSING').length;
-  const enrolledStudents = leads.filter(l => l.status === 'ENROLLED').length;
+  const studyAbroadCount = leads.filter(l => (l.leadCategory || 'STUDY_ABROAD') === 'STUDY_ABROAD').length;
+  const ieltsCount = leads.filter(l => l.leadCategory === 'IELTS').length;
+  const pteCount = leads.filter(l => l.leadCategory === 'PTE').length;
+  const englishSpeakingCount = leads.filter(l => l.leadCategory === 'ENGLISH_SPEAKING').length;
+  const computerCourseCount = leads.filter(l => l.leadCategory === 'COMPUTER_COURSE' || l.leadCategory === 'DIGITAL_MARKETING').length;
 
-  // Filter schedules
+  const admissionReadyCount = leads.filter(l => (l.readinessScore ?? 0) >= 80).length;
+  const needsAttentionCount = leads.filter(l => (l.readinessScore ?? 0) < 80).length;
+
   const upcomingFollowups = followups
     .filter(f => f.status === 'SCHEDULED' && new Date(f.followupDate) >= new Date())
     .sort((a, b) => new Date(a.followupDate).getTime() - new Date(b.followupDate).getTime());
@@ -193,70 +172,98 @@ export default function DashboardPage() {
           <button onClick={() => { setErrorMsg(''); setShowFollowupModal(true); }} className="btn">
             📅 Schedule Followup
           </button>
-          <button onClick={() => { setErrorMsg(''); setShowUploadModal(true); }} className="btn">
-            📄 Upload Document
-          </button>
         </div>
       </div>
 
       {/* KPI Cards Grid */}
-      <section className="dashboard-grid">
-        <div className="kpi-card" style={{ borderLeft: '3px solid #64748b' }}>
-          <div className="kpi-label">Total Leads</div>
-          <div className="kpi-value">{totalLeads}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Registered candidates
-          </div>
-        </div>
-
+      <section className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
         <div className="kpi-card" style={{ borderLeft: '3px solid #3b82f6' }}>
-          <div className="kpi-label">New Leads</div>
-          <div className="kpi-value">{newLeads}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Awaiting outreach
-          </div>
-        </div>
-
-        <div className="kpi-card" style={{ borderLeft: '3px solid #f59e0b' }}>
-          <div className="kpi-label">Applications</div>
-          <div className="kpi-value">{applications}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Submitted to universities
-          </div>
+          <div className="kpi-label">Study Abroad</div>
+          <div className="kpi-value">{studyAbroadCount}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Leads registered</div>
         </div>
 
         <div className="kpi-card" style={{ borderLeft: '3px solid #8b5cf6' }}>
-          <div className="kpi-label">Offer Letters</div>
-          <div className="kpi-value">{offerLetters}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Received approvals
-          </div>
+          <div className="kpi-label">IELTS / PTE</div>
+          <div className="kpi-value">{ieltsCount + pteCount}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Coaching leads</div>
         </div>
 
-        <div className="kpi-card" style={{ borderLeft: '3px solid #ec4899' }}>
-          <div className="kpi-label">Visa Processing</div>
-          <div className="kpi-value">{visaProcessing}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Embassy application phase
-          </div>
+        <div className="kpi-card" style={{ borderLeft: '3px solid #14b8a6' }}>
+          <div className="kpi-label">English Speaking</div>
+          <div className="kpi-value">{englishSpeakingCount}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Speaking leads</div>
         </div>
 
-        <div className="kpi-card" style={{ borderLeft: '3px solid #10b981' }}>
-          <div className="kpi-label">Enrolled Students</div>
-          <div className="kpi-value">{enrolledStudents}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Fully admitted & registered
-          </div>
+        <div className="kpi-card" style={{ borderLeft: '3px solid #f59e0b' }}>
+          <div className="kpi-label">Pending Verification</div>
+          <div className="kpi-value" style={{ color: '#d97706' }}>{pendingVerificationCount}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Docs awaiting review</div>
+        </div>
+
+        <div className="kpi-card" style={{ borderLeft: '3px solid #ef4444' }}>
+          <div className="kpi-label">Expiring Documents</div>
+          <div className="kpi-value" style={{ color: '#dc2626' }}>{expiringDocs.length}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Expiry within 90 days</div>
         </div>
       </section>
 
-      {/* Split Lists: Upcoming Followups & Recent Activities */}
-      <div style={{ display: 'flex', padding: '0 20px', gap: '20px', marginTop: '10px' }}>
+      {/* Compliance / Readiness score overview banner */}
+      <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '0 20px', marginTop: '10px' }}>
+        <div style={{ padding: '16px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '13px', color: '#065f46', fontWeight: 700 }}>Admission Ready Candidates</h4>
+            <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#047857' }}>Students with &ge; 80% documents uploaded and verified</p>
+          </div>
+          <span style={{ fontSize: '24px', fontWeight: 800, color: '#059669' }}>{admissionReadyCount}</span>
+        </div>
+
+        <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '13px', color: '#92400e', fontWeight: 700 }}>Needs Document Attention</h4>
+            <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#b45309' }}>Students with incomplete required credentials</p>
+          </div>
+          <span style={{ fontSize: '24px', fontWeight: 800, color: '#d97706' }}>{needsAttentionCount}</span>
+        </div>
+      </section>
+
+      {/* Split Columns */}
+      <div style={{ display: 'flex', padding: '0 20px', gap: '20px', marginTop: '20px', flexWrap: 'wrap' }}>
         
-        {/* Column 1: Upcoming Followups */}
-        <div style={{ flex: 1, minWidth: 0, background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+        {/* Column 1: Expiring Documents soon list */}
+        <div style={{ flex: 1, minWidth: '300px', background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
-            📅 Upcoming Followups Agenda
+            ⚠️ Documents Expiring Soon (90 Days)
+          </h3>
+          {expiringDocs.length === 0 ? (
+            <div style={{ padding: '20px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px' }}>
+              No document expirations detected in the next 90 days.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {expiringDocs.map((doc) => (
+                <div key={doc.id} style={{ padding: '10px', background: '#fff2f2', border: '1px solid #fca5a5', borderRadius: '4px', fontSize: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                    <a href={`/dashboard/leads/${doc.lead?.id}`} style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                      {doc.lead?.firstName} {doc.lead?.lastName || ''}
+                    </a>
+                    <span style={{ color: '#dc2626', fontSize: '11px' }}>
+                      Expires: {new Date(doc.expiryDate).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#7f1d1d', marginTop: '2px' }}>
+                    Document Type: <strong>{doc.documentType}</strong>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Column 2: Upcoming Followups */}
+        <div style={{ flex: 1, minWidth: '300px', background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
+            📅 Upcoming Followups
           </h3>
           {upcomingFollowups.length === 0 ? (
             <div style={{ padding: '20px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px' }}>
@@ -285,8 +292,8 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Column 2: Recent Activities */}
-        <div style={{ flex: 1, minWidth: 0, background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+        {/* Column 3: Recent Activities */}
+        <div style={{ flex: 1, minWidth: '300px', background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
             📞 Recent Lead Activities
           </h3>
@@ -354,19 +361,16 @@ export default function DashboardPage() {
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <div className="form-group" style={{ flex: 1 }}>
-                <label>Country</label>
-                <input type="text" className="form-control" placeholder="e.g. USA" value={leadForm.country} onChange={e => setLeadForm({ ...leadForm, country: e.target.value })} />
-              </div>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label>Course</label>
-                <input type="text" className="form-control" placeholder="e.g. MS CS" value={leadForm.course} onChange={e => setLeadForm({ ...leadForm, course: e.target.value })} />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label>Intake</label>
-                <input type="text" className="form-control" placeholder="e.g. Fall 2026" value={leadForm.intake} onChange={e => setLeadForm({ ...leadForm, intake: e.target.value })} />
+                <label>Lead Category</label>
+                <select className="form-control" value={leadForm.leadCategory} onChange={e => setLeadForm({ ...leadForm, leadCategory: e.target.value })}>
+                  <option value="STUDY_ABROAD">Study Abroad</option>
+                  <option value="IELTS">IELTS</option>
+                  <option value="PTE">PTE</option>
+                  <option value="ENGLISH_SPEAKING">English Speaking</option>
+                  <option value="COMPUTER_COURSE">Computer Course</option>
+                  <option value="DIGITAL_MARKETING">Digital Marketing</option>
+                  <option value="OTHER">Other</option>
+                </select>
               </div>
               <div className="form-group" style={{ flex: 1 }}>
                 <label>Lead Source</label>
@@ -378,6 +382,22 @@ export default function DashboardPage() {
                   <option value="FACEBOOK_ADS">Facebook Ads</option>
                 </select>
               </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Country</label>
+                <input type="text" className="form-control" placeholder="e.g. USA" value={leadForm.country} onChange={e => setLeadForm({ ...leadForm, country: e.target.value })} />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Course</label>
+                <input type="text" className="form-control" placeholder="e.g. MS CS" value={leadForm.course} onChange={e => setLeadForm({ ...leadForm, course: e.target.value })} />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Intake</label>
+              <input type="text" className="form-control" placeholder="e.g. Fall 2026" value={leadForm.intake} onChange={e => setLeadForm({ ...leadForm, intake: e.target.value })} />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
@@ -424,57 +444,6 @@ export default function DashboardPage() {
               <button type="button" className="btn" disabled={isSubmitting} onClick={() => setShowFollowupModal(false)}>Cancel</button>
               <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
                 {isSubmitting ? 'Scheduling...' : 'Schedule'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* 3. Upload Document Modal */}
-      {showUploadModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <form onSubmit={handleUploadSubmit} style={{ backgroundColor: '#fff', borderRadius: '4px', border: '1px solid var(--border-color)', padding: '20px', width: '420px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0, borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>📄 Upload Student Document</h3>
-            
-            {errorMsg && <div style={{ color: 'var(--danger-color)', fontSize: '11px', fontWeight: 600 }}>{errorMsg}</div>}
-            
-            <div className="form-group">
-              <label>Select Student *</label>
-              <select className="form-control" required value={uploadForm.leadId} onChange={e => setUploadForm({ ...uploadForm, leadId: e.target.value })}>
-                <option value="">-- Choose Candidate --</option>
-                {leads.map(l => (
-                  <option key={l.id} value={l.id}>
-                    {l.firstName} {l.lastName || ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Document Type *</label>
-              <select className="form-control" value={uploadForm.type} onChange={e => setUploadForm({ ...uploadForm, type: e.target.value })}>
-                <option value="PASSPORT">Passport</option>
-                <option value="IELTS">IELTS / TOEFL Scorecard</option>
-                <option value="MARKSHEET_10TH">10th Marksheet</option>
-                <option value="MARKSHEET_12TH">12th Marksheet</option>
-                <option value="DEGREE">Degree Certificate</option>
-                <option value="SOP">SOP (Statement of Purpose)</option>
-                <option value="LOR">LOR (Letter of Recommendation)</option>
-                <option value="OFFER_LETTER">Offer Letter</option>
-                <option value="VISA_DOCUMENT">Visa Document</option>
-                <option value="OTHER">Other Academic Document</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Document File Name *</label>
-              <input type="text" className="form-control" placeholder="e.g. passport_scan.pdf" required value={uploadForm.fileName} onChange={e => setUploadForm({ ...uploadForm, fileName: e.target.value })} />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
-              <button type="button" className="btn" disabled={isSubmitting} onClick={() => setShowUploadModal(false)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                {isSubmitting ? 'Uploading...' : 'Upload'}
               </button>
             </div>
           </form>

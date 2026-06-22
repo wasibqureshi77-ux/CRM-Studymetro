@@ -180,7 +180,23 @@ export const METRO_TRACKER_SDK = `(function() {
 
             if (!name || !val) continue;
 
-            if (name.indexOf('email') > -1) {
+            if (name === 'leadcategory') {
+              fields.leadCategory = val;
+            } else if (name === 'preferredcountry') {
+              fields.preferredCountry = val;
+            } else if (name === 'intendedintake') {
+              fields.intendedIntake = val;
+            } else if (name === 'planningtimeline') {
+              fields.planningTimeline = val;
+            } else if (name === 'englishlevel') {
+              fields.englishLevel = val;
+            } else if (name === 'targetscore') {
+              fields.targetScore = val;
+            } else if (name === 'purpose') {
+              fields.purpose = val;
+            } else if (name === 'courseinterest') {
+              fields.courseInterest = val;
+            } else if (name.indexOf('email') > -1) {
               fields.email = val;
             } else if (name.indexOf('phone') > -1 || name.indexOf('tel') > -1 || name.indexOf('mobile') > -1 || name.indexOf('contact') > -1) {
               fields.phone = val;

@@ -1,11 +1,30 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TrackEventDto, TrackFormDto, IdentifyVisitorDto } from './dto/tracker.dto';
-import { LeadSource } from '@prisma/client';
+import { LeadSource, LeadCategory } from '@prisma/client';
+
+import { LeadDocumentService } from '../document/lead-document.service';
 
 @Injectable()
 export class TrackerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly documentService: LeadDocumentService
+  ) {}
+
+  private mapCategoryToEnum(cat?: string): LeadCategory {
+    if (!cat) return 'STUDY_ABROAD';
+    const clean = cat.trim().toUpperCase().replace(/\s+/g, '_');
+    switch (clean) {
+      case 'STUDY_ABROAD': return 'STUDY_ABROAD';
+      case 'IELTS': return 'IELTS';
+      case 'PTE': return 'PTE';
+      case 'ENGLISH_SPEAKING': return 'ENGLISH_SPEAKING';
+      case 'COMPUTER_COURSE': return 'COMPUTER_COURSE';
+      case 'DIGITAL_MARKETING': return 'DIGITAL_MARKETING';
+      default: return 'OTHER';
+    }
+  }
 
   async trackEvent(dto: TrackEventDto, tenantId: string) {
     // 1. Verify Tenant exists
@@ -240,7 +259,13 @@ export class TrackerService {
     
     let normEmail = null;
     if (email) {
-      normEmail = email.trim().toLowerCase().split('+')[0] + (email.includes('@') ? '@' + email.split('@')[1] : '');
+      const clean = email.trim().toLowerCase();
+      if (clean.includes('@')) {
+        const parts = clean.split('@');
+        normEmail = `${parts[0].split('+')[0]}@${parts[1]}`;
+      } else {
+        normEmail = clean;
+      }
     }
     
     let normPhone = null;
@@ -266,14 +291,24 @@ export class TrackerService {
       });
     }
 
-    const country = dto.formFields.country || null;
-    const course = dto.formFields.course || null;
-    const intake = dto.formFields.intake || null;
+    const country = dto.formFields.preferredCountry || dto.formFields.country || null;
+    const course = dto.formFields.leadCategory || dto.formFields.course || null;
+    const intake = dto.formFields.intendedIntake || dto.formFields.intake || null;
+
+    const category = this.mapCategoryToEnum(dto.formFields.leadCategory);
 
     if (existingLead) {
       // Prevent duplicates: link current visitor, and create match activity log
       const updateData: any = {
-        submissionCount: { increment: 1 }
+        submissionCount: { increment: 1 },
+        leadCategory: category,
+        preferredCountry: dto.formFields.preferredCountry || country || undefined,
+        planningTimeline: dto.formFields.planningTimeline || undefined,
+        intendedIntake: dto.formFields.intendedIntake || intake || undefined,
+        englishLevel: dto.formFields.englishLevel || undefined,
+        targetScore: dto.formFields.targetScore || undefined,
+        purpose: dto.formFields.purpose || undefined,
+        courseInterest: dto.formFields.courseInterest || undefined
       };
       if (!existingLead.visitorId) {
         updateData.visitorId = dto.visitorId;
@@ -382,13 +417,21 @@ export class TrackerService {
         normalizedPhone: normPhone,
         visitorId: dto.visitorId,
         source: sourceVal,
-        status: 'NEW',
+        status: 'NEW_LEAD',
         submissionCount: 1,
+        leadCategory: category,
+        preferredCountry: dto.formFields.preferredCountry || country || null,
+        planningTimeline: dto.formFields.planningTimeline || null,
+        intendedIntake: dto.formFields.intendedIntake || intake || null,
+        englishLevel: dto.formFields.englishLevel || null,
+        targetScore: dto.formFields.targetScore || null,
+        purpose: dto.formFields.purpose || null,
+        courseInterest: dto.formFields.courseInterest || null,
         studentProfile: {
           create: {
-            targetCountry: country,
-            targetCourse: course,
-            intake: intake
+            targetCountry: dto.formFields.preferredCountry || country || null,
+            targetCourse: dto.formFields.leadCategory || course || null,
+            intake: dto.formFields.intendedIntake || intake || null
           }
         },
         submissions: {
@@ -411,6 +454,9 @@ export class TrackerService {
         studentProfile: true
       }
     });
+
+    // Generate dynamic documents checklist automatically based on leadCategory
+    await this.documentService.generateChecklist(newLead.id, newLead.leadCategory);
 
     // Sync past events to WEBSITE_VISIT activities
     await this.syncPastEventsToActivities(dto.visitorId, newLead.id);

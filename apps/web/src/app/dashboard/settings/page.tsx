@@ -42,17 +42,23 @@ export default function SettingsPage() {
   ]);
 
   const [statuses, setStatuses] = useState<{ code: string; label: string; active: boolean }[]>([
-    { code: 'NEW', label: 'New Candidate Registration', active: true },
-    { code: 'CONTACTED', label: 'Initial Outreach Completed', active: true },
-    { code: 'COUNSELLING', label: 'Counselling & Academic Check', active: true },
-    { code: 'COUNTRY_SELECTION', label: 'Target Country Selected', active: true },
-    { code: 'UNIVERSITY_SHORTLISTING', label: 'University Applications Shortlisted', active: true },
-    { code: 'APPLICATION_SUBMITTED', label: 'Application Submitted to University', active: true },
-    { code: 'OFFER_LETTER_RECEIVED', label: 'Admission Offer Letter Received', active: true },
-    { code: 'VISA_PROCESSING', label: 'Visa Embassy Processing Stage', active: true },
-    { code: 'ENROLLED', label: 'Fully Enrolled & Registered Student', active: true },
-    { code: 'LOST', label: 'Lost / Candidate Withdrawn', active: true },
-    { code: 'JUNK', label: 'Spam / Invalid Leads Ingress', active: true }
+    { code: 'NEW_LEAD', label: 'New Lead', active: true },
+    { code: 'CONTACTED', label: 'Contacted', active: true },
+    { code: 'COUNSELLING', label: 'Counselling', active: true },
+    { code: 'DEMO_CLASS', label: 'Demo Class', active: true },
+    { code: 'DEMO_SESSION', label: 'Demo Session', active: true },
+    { code: 'ENROLLED', label: 'Enrolled', active: true },
+    { code: 'TRAINING', label: 'Training', active: true },
+    { code: 'EXAM_BOOKED', label: 'Exam Booked', active: true },
+    { code: 'COURSE_ONGOING', label: 'Course Ongoing', active: true },
+    { code: 'COMPLETED', label: 'Completed', active: true },
+    { code: 'DOCUMENTS_PENDING', label: 'Documents Pending', active: true },
+    { code: 'DOCUMENTS_RECEIVED', label: 'Documents Received', active: true },
+    { code: 'UNIVERSITY_APPLIED', label: 'University Applied', active: true },
+    { code: 'OFFER_LETTER', label: 'Offer Letter Received', active: true },
+    { code: 'VISA_PROCESS', label: 'Visa Process', active: true },
+    { code: 'ADMISSION_CLOSED', label: 'Admission Closed', active: true },
+    { code: 'LOST', label: 'Lost / Not Interested', active: true }
   ]);
 
   // Input states for adding values

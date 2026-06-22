@@ -1,21 +1,44 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto, AssignLeadDto, CreateNoteDto } from './dto/lead.dto';
-import { LeadStatus, LeadSource } from '@prisma/client';
+import { LeadStatus, LeadSource, LeadCategory } from '@prisma/client';
+
+import { LeadDocumentService } from '../document/lead-document.service';
 
 @Injectable()
 export class LeadService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly documentService: LeadDocumentService
+  ) {}
 
   private normalizeEmail(email?: string): string | null {
     if (!email) return null;
-    return email.trim().toLowerCase().split('+')[0] + (email.includes('@') ? '@' + email.split('@')[1] : '');
+    const clean = email.trim().toLowerCase();
+    if (!clean.includes('@')) return clean;
+    const parts = clean.split('@');
+    const local = parts[0].split('+')[0];
+    return `${local}@${parts[1]}`;
   }
 
   private normalizePhone(phone?: string): string | null {
     if (!phone) return null;
     const digits = phone.replace(/\D/g, '');
     return digits ? `+${digits}` : null;
+  }
+
+  private mapCategoryToEnum(cat?: string): LeadCategory {
+    if (!cat) return 'STUDY_ABROAD';
+    const clean = cat.trim().toUpperCase().replace(/\s+/g, '_');
+    switch (clean) {
+      case 'STUDY_ABROAD': return 'STUDY_ABROAD';
+      case 'IELTS': return 'IELTS';
+      case 'PTE': return 'PTE';
+      case 'ENGLISH_SPEAKING': return 'ENGLISH_SPEAKING';
+      case 'COMPUTER_COURSE': return 'COMPUTER_COURSE';
+      case 'DIGITAL_MARKETING': return 'DIGITAL_MARKETING';
+      default: return 'OTHER';
+    }
   }
 
   async create(dto: CreateLeadDto, tenantId: string, actorId: string) {
@@ -62,6 +85,11 @@ export class LeadService {
       }
     }
 
+    const category = this.mapCategoryToEnum(dto.leadCategory);
+    const prefCountry = dto.preferredCountry || dto.studentProfile?.targetCountry;
+    const intIntake = dto.intendedIntake || dto.studentProfile?.intake;
+    const targetCourse = dto.leadCategory || dto.studentProfile?.targetCourse;
+
     const lead = await this.prisma.lead.create({
       data: {
         tenantId,
@@ -73,24 +101,35 @@ export class LeadService {
         phone: dto.phone,
         normalizedPhone: normPhone,
         source: dto.source,
-        status: LeadStatus.NEW,
+        status: LeadStatus.NEW_LEAD,
         submissionCount: 1,
-        studentProfile: dto.studentProfile ? {
+        leadCategory: category,
+        preferredCountry: prefCountry || null,
+        planningTimeline: dto.planningTimeline || null,
+        intendedIntake: intIntake || null,
+        englishLevel: dto.englishLevel || null,
+        targetScore: dto.targetScore || null,
+        purpose: dto.purpose || null,
+        courseInterest: dto.courseInterest || null,
+        studentProfile: {
           create: {
-            targetCountry: dto.studentProfile.targetCountry,
-            targetCourse: dto.studentProfile.targetCourse,
-            intake: dto.studentProfile.intake,
-            ieltsStatus: dto.studentProfile.ieltsStatus,
-            passportStatus: dto.studentProfile.passportStatus,
-            educationLevel: dto.studentProfile.educationLevel,
-            percentageGpa: dto.studentProfile.percentageGpa,
-            budget: dto.studentProfile.budget,
-            currentQualification: dto.studentProfile.currentQualification
+            targetCountry: prefCountry || null,
+            targetCourse: targetCourse || null,
+            intake: intIntake || null,
+            ieltsStatus: dto.studentProfile?.ieltsStatus || 'NOT_TAKEN',
+            passportStatus: dto.studentProfile?.passportStatus || 'NO_PASSPORT',
+            educationLevel: dto.studentProfile?.educationLevel || null,
+            percentageGpa: dto.studentProfile?.percentageGpa || null,
+            budget: dto.studentProfile?.budget || null,
+            currentQualification: dto.studentProfile?.currentQualification || null
           }
-        } : undefined
+        }
       },
       include: { studentProfile: true }
     });
+
+    // Generate dynamic documents checklist automatically based on leadCategory
+    await this.documentService.generateChecklist(lead.id, lead.leadCategory);
 
     await this.prisma.activity.create({
       data: {
@@ -123,6 +162,7 @@ export class LeadService {
       source?: LeadSource;
       targetCountry?: string;
       intake?: string;
+      leadCategory?: LeadCategory;
       q?: string;
     }
   ) {
@@ -148,6 +188,7 @@ export class LeadService {
         status: filters.status,
         branchId: filters.branchId,
         source: filters.source,
+        leadCategory: filters.leadCategory,
         studentProfile: (filters.targetCountry || filters.intake) ? {
           targetCountry: filters.targetCountry,
           intake: filters.intake
@@ -206,6 +247,11 @@ export class LeadService {
       this.validateStatusTransition(lead.status, dto.status, lead.studentProfile);
     }
 
+    const category = dto.leadCategory ? this.mapCategoryToEnum(dto.leadCategory) : undefined;
+    const prefCountry = dto.preferredCountry || dto.studentProfile?.targetCountry;
+    const intIntake = dto.intendedIntake || dto.studentProfile?.intake;
+    const targetCourse = dto.leadCategory || dto.studentProfile?.targetCourse;
+
     const updated = await this.prisma.lead.update({
       where: { id },
       data: {
@@ -217,29 +263,37 @@ export class LeadService {
         normalizedPhone: normPhone,
         status: dto.status,
         source: dto.source,
-        studentProfile: dto.studentProfile ? {
+        leadCategory: category,
+        preferredCountry: dto.preferredCountry,
+        planningTimeline: dto.planningTimeline,
+        intendedIntake: dto.intendedIntake,
+        englishLevel: dto.englishLevel,
+        targetScore: dto.targetScore,
+        purpose: dto.purpose,
+        courseInterest: dto.courseInterest,
+        studentProfile: (dto.studentProfile || dto.preferredCountry || dto.intendedIntake || dto.leadCategory) ? {
           upsert: {
             create: {
-              targetCountry: dto.studentProfile.targetCountry,
-              targetCourse: dto.studentProfile.targetCourse,
-              intake: dto.studentProfile.intake,
-              ieltsStatus: dto.studentProfile.ieltsStatus,
-              passportStatus: dto.studentProfile.passportStatus,
-              educationLevel: dto.studentProfile.educationLevel,
-              percentageGpa: dto.studentProfile.percentageGpa,
-              budget: dto.studentProfile.budget,
-              currentQualification: dto.studentProfile.currentQualification
+              targetCountry: prefCountry || null,
+              targetCourse: targetCourse || null,
+              intake: intIntake || null,
+              ieltsStatus: dto.studentProfile?.ieltsStatus || 'NOT_TAKEN',
+              passportStatus: dto.studentProfile?.passportStatus || 'NO_PASSPORT',
+              educationLevel: dto.studentProfile?.educationLevel || null,
+              percentageGpa: dto.studentProfile?.percentageGpa || null,
+              budget: dto.studentProfile?.budget || null,
+              currentQualification: dto.studentProfile?.currentQualification || null
             },
             update: {
-              targetCountry: dto.studentProfile.targetCountry,
-              targetCourse: dto.studentProfile.targetCourse,
-              intake: dto.studentProfile.intake,
-              ieltsStatus: dto.studentProfile.ieltsStatus,
-              passportStatus: dto.studentProfile.passportStatus,
-              educationLevel: dto.studentProfile.educationLevel,
-              percentageGpa: dto.studentProfile.percentageGpa,
-              budget: dto.studentProfile.budget,
-              currentQualification: dto.studentProfile.currentQualification
+              targetCountry: prefCountry !== undefined ? prefCountry : undefined,
+              targetCourse: targetCourse !== undefined ? targetCourse : undefined,
+              intake: intIntake !== undefined ? intIntake : undefined,
+              ieltsStatus: dto.studentProfile?.ieltsStatus,
+              passportStatus: dto.studentProfile?.passportStatus,
+              educationLevel: dto.studentProfile?.educationLevel,
+              percentageGpa: dto.studentProfile?.percentageGpa,
+              budget: dto.studentProfile?.budget,
+              currentQualification: dto.studentProfile?.currentQualification
             }
           }
         } : undefined
@@ -543,7 +597,7 @@ export class LeadService {
     const beforeState = { primary, duplicate };
 
     // 1. Relocate child entities
-    await this.prisma.document.updateMany({
+    await this.prisma.leadDocument.updateMany({
       where: { leadId: duplicateId },
       data: { leadId: primaryId }
     });
@@ -625,14 +679,6 @@ export class LeadService {
   }
 
   private validateStatusTransition(from: LeadStatus, to: LeadStatus, profile: any) {
-    if (from === LeadStatus.COUNSELLING && to === LeadStatus.COUNTRY_SELECTION) {
-      if (!profile || !profile.educationLevel || !profile.percentageGpa) {
-        throw new BadRequestException('Cannot select country: Student academic details missing');
-      }
-    }
-
-    if (from === LeadStatus.NEW && to === LeadStatus.APPLICATION_SUBMITTED) {
-      throw new BadRequestException('Cannot skip Counselling and University selection stages');
-    }
+    // Pipeline board drag-and-drop allows all transitions
   }
 }

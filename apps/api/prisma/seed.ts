@@ -16,7 +16,7 @@ async function main() {
   await prisma.activity.deleteMany({ where: { lead: { tenantId } } });
   await prisma.auditLog.deleteMany({ where: { tenantId } });
   await prisma.followup.deleteMany({ where: { lead: { tenantId } } });
-  await prisma.document.deleteMany({ where: { lead: { tenantId } } });
+  await prisma.leadDocument.deleteMany({ where: { lead: { tenantId } } });
   await prisma.studentProfile.deleteMany({ where: { lead: { tenantId } } });
   await prisma.note.deleteMany({ where: { lead: { tenantId } } });
   await prisma.lead.deleteMany({ where: { tenantId } });
@@ -77,7 +77,7 @@ async function main() {
       normalizedEmail: 'john.doe@gmail.com',
       phone: '+1234567890',
       normalizedPhone: '+1234567890',
-      status: LeadStatus.NEW,
+      status: LeadStatus.NEW_LEAD,
       source: LeadSource.MANUAL,
       assigneeId: superAdmin.id,
       studentProfile: {

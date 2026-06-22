@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
-import { LeadService } from './lead.service';
 import { LeadController } from './lead.controller';
+import { LeadService } from './lead.service';
+import { DocumentModule } from '../document/document.module';
 
 @Module({
+  imports: [DocumentModule],
   controllers: [LeadController],
   providers: [LeadService],
-  exports: [LeadService],
+  exports: [LeadService]
 })
 export class LeadModule {}

@@ -17,18 +17,35 @@ enum Role {
 }
 
 enum LeadStatus {
-  NEW
+  NEW_LEAD
   CONTACTED
   COUNSELLING
-  COUNTRY_SELECTION
-  UNIVERSITY_SHORTLISTING
-  APPLICATION_SUBMITTED
-  OFFER_LETTER_RECEIVED
-  VISA_PROCESSING
+  DEMO_CLASS
+  DEMO_SESSION
   ENROLLED
+  TRAINING
+  EXAM_BOOKED
+  COURSE_ONGOING
+  COMPLETED
+  DOCUMENTS_PENDING
+  DOCUMENTS_RECEIVED
+  UNIVERSITY_APPLIED
+  OFFER_LETTER
+  VISA_PROCESS
+  ADMISSION_CLOSED
   LOST
-  JUNK
 }
+
+enum LeadCategory {
+  STUDY_ABROAD
+  IELTS
+  PTE
+  ENGLISH_SPEAKING
+  COMPUTER_COURSE
+  DIGITAL_MARKETING
+  OTHER
+}
+
 
 enum LeadSource {
   WEBSITE_SDK
@@ -119,7 +136,7 @@ model User {
   notes        Note[]
   activities   Activity[]
   followups    Followup[]
-  approvedDocs Document[] @relation("DocApprover")
+  approvedDocs LeadDocument[] @relation("DocApprover")
   notifications Notification[]
   sessions     UserSession[]
 }
@@ -136,7 +153,7 @@ model Lead {
   normalizedEmail String?
   phone          String?
   normalizedPhone String?
-  status         LeadStatus  @default(NEW)
+  status         LeadStatus  @default(NEW_LEAD)
   source         LeadSource  @default(MANUAL)
   assigneeId     String?
   assignee       User?       @relation("LeadAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
@@ -146,10 +163,19 @@ model Lead {
   updatedAt      DateTime    @updatedAt
   deletedAt      DateTime?
   submissionCount Int            @default(1)
+  leadCategory   LeadCategory @default(STUDY_ABROAD)
+  preferredCountry String?
+  planningTimeline String?
+  intendedIntake   String?
+  englishLevel     String?
+  targetScore      String?
+  purpose          String?
+  courseInterest   String?
+  readinessScore Float?
 
   submissions    LeadSubmission[]
   studentProfile StudentProfile?
-  documents      Document[]
+  documents      LeadDocument[]
   followups      Followup[]
   activities     Activity[]
   notes          Note[]
@@ -190,28 +216,39 @@ model Note {
   @@index([leadId])
 }
 
-model Document {
+enum DocumentStatus {
+  PENDING
+  UPLOADED
+  VERIFIED
+  REJECTED
+}
+
+model LeadDocument {
   id               String         @id @default(uuid())
   leadId           String
   lead             Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  documentType     DocumentType
-  originalFileName String
-  storedFileName   String
-  filePath         String
-  fileSize         Int
-  mimeType         String
-  isPasswordProtected Boolean     @default(false)
-  pdfPassword      String?
-  uploadedAt       DateTime       @default(now())
-  approvalStatus   ApprovalStatus @default(PENDING)
-  rejectionReason  String?
+  documentType     String
+  version          Int            @default(1)
+  isCurrent        Boolean        @default(true)
+  isRequired       Boolean        @default(true)
+  status           DocumentStatus @default(PENDING)
+  originalFileName String?
+  storedFileName   String?
+  filePath         String?
+  fileSize         Int?
+  mimeType         String?
+  uploadedAt       DateTime?
+  verifiedAt       DateTime?
+  rejectedAt       DateTime?
+  verificationNote String?
+  expiryDate       DateTime?
   approvedById     String?
   approvedBy       User?          @relation("DocApprover", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedAt       DateTime?
+  createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
   @@index([leadId])
-  @@index([approvalStatus])
+  @@index([status])
 }
 
 model Followup {

@@ -6,7 +6,7 @@ import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { BranchGuard } from '../auth/guards/branch.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
-import { LeadStatus, LeadSource } from '@prisma/client';
+import { LeadStatus, LeadSource, LeadCategory } from '@prisma/client';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard, BranchGuard)
 @Controller('api/v1/leads')
@@ -63,6 +63,7 @@ export class LeadController {
     @Query('source') source?: LeadSource,
     @Query('targetCountry') targetCountry?: string,
     @Query('intake') intake?: string,
+    @Query('leadCategory') leadCategory?: LeadCategory,
     @Query('q') q?: string
   ) {
     const tenantId = req.tenantId!;
@@ -73,6 +74,7 @@ export class LeadController {
       source,
       targetCountry,
       intake,
+      leadCategory,
       q
     });
   }

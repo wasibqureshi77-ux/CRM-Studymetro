@@ -50,9 +50,9 @@ async function runMigration() {
         });
       }
 
-      // Reparent Document records
+      // Reparent LeadDocument records
       if (lead.documents.length > 0) {
-        await prisma.document.updateMany({
+        await prisma.leadDocument.updateMany({
           where: { leadId: lead.id },
           data: { leadId: existingMaster.id },
         });

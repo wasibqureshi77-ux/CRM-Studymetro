@@ -70,6 +70,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <li className={`sidebar-item ${pathname === '/dashboard' ? 'active' : ''}`}>
             <a href="/dashboard">🏠 Dashboard</a>
           </li>
+          <li className={`sidebar-item ${pathname === '/dashboard/pipeline' ? 'active' : ''}`}>
+            <a href="/dashboard/pipeline">📋 Pipeline Board</a>
+          </li>
           <li className={`sidebar-item ${pathname?.startsWith('/dashboard/leads') ? 'active' : ''}`}>
             <a href="/dashboard/leads">👨‍🎓 Leads</a>
           </li>

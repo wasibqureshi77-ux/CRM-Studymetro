@@ -17,6 +17,7 @@ export default function LeadsPage() {
   const [branchFilter, setBranchFilter] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [intakeFilter, setIntakeFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -40,9 +41,14 @@ export default function LeadsPage() {
     phone: '',
     source: 'MANUAL',
     branchId: '',
-    targetCountry: '',
-    targetCourse: '',
-    intake: '',
+    leadCategory: 'STUDY_ABROAD',
+    preferredCountry: '',
+    planningTimeline: '',
+    intendedIntake: '',
+    englishLevel: '',
+    targetScore: '',
+    purpose: '',
+    courseInterest: ''
   });
 
   const [operationError, setOperationError] = useState<string | null>(null);
@@ -71,6 +77,7 @@ export default function LeadsPage() {
       if (branchFilter) params.set('branchId', branchFilter);
       if (countryFilter) params.set('targetCountry', countryFilter);
       if (intakeFilter) params.set('intake', intakeFilter);
+      if (categoryFilter) params.set('leadCategory', categoryFilter);
 
       const res = await api.get(`/api/v1/leads?${params.toString()}`);
       setLeads(res || []);
@@ -89,7 +96,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads();
-  }, [q, statusFilter, sourceFilter, branchFilter, countryFilter, intakeFilter]);
+  }, [q, statusFilter, sourceFilter, branchFilter, countryFilter, intakeFilter, categoryFilter]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
@@ -189,13 +196,21 @@ export default function LeadsPage() {
         phone: createForm.phone,
         source: createForm.source,
         branchId: createForm.branchId || undefined,
+        leadCategory: createForm.leadCategory,
+        preferredCountry: createForm.preferredCountry || undefined,
+        planningTimeline: createForm.planningTimeline || undefined,
+        intendedIntake: createForm.intendedIntake || undefined,
+        englishLevel: createForm.englishLevel || undefined,
+        targetScore: createForm.targetScore || undefined,
+        purpose: createForm.purpose || undefined,
+        courseInterest: createForm.courseInterest || undefined,
       };
 
-      if (createForm.targetCountry || createForm.targetCourse || createForm.intake) {
+      if (createForm.preferredCountry || createForm.leadCategory || createForm.intendedIntake) {
         payload.studentProfile = {
-          targetCountry: createForm.targetCountry || undefined,
-          targetCourse: createForm.targetCourse || undefined,
-          intake: createForm.intake || undefined,
+          targetCountry: createForm.preferredCountry || undefined,
+          targetCourse: createForm.leadCategory || undefined,
+          intake: createForm.intendedIntake || undefined,
         };
       }
 
@@ -210,9 +225,14 @@ export default function LeadsPage() {
         phone: '',
         source: 'MANUAL',
         branchId: '',
-        targetCountry: '',
-        targetCourse: '',
-        intake: '',
+        leadCategory: 'STUDY_ABROAD',
+        preferredCountry: '',
+        planningTimeline: '',
+        intendedIntake: '',
+        englishLevel: '',
+        targetScore: '',
+        purpose: '',
+        courseInterest: ''
       });
       fetchLeads();
     } catch (err: any) {
@@ -269,17 +289,34 @@ export default function LeadsPage() {
 
         <select className="form-control" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">-- All Statuses --</option>
-          <option value="NEW">New</option>
+          <option value="NEW_LEAD">New Lead</option>
           <option value="CONTACTED">Contacted</option>
           <option value="COUNSELLING">Counselling</option>
-          <option value="COUNTRY_SELECTION">Country Selection</option>
-          <option value="UNIVERSITY_SHORTLISTING">University Shortlisting</option>
-          <option value="APPLICATION_SUBMITTED">Application Submitted</option>
-          <option value="OFFER_LETTER_RECEIVED">Offer Received</option>
-          <option value="VISA_PROCESSING">Visa Processing</option>
+          <option value="DEMO_CLASS">Demo Class</option>
+          <option value="DEMO_SESSION">Demo Session</option>
           <option value="ENROLLED">Enrolled</option>
+          <option value="TRAINING">Training</option>
+          <option value="EXAM_BOOKED">Exam Booked</option>
+          <option value="COURSE_ONGOING">Course Ongoing</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="DOCUMENTS_PENDING">Documents Pending</option>
+          <option value="DOCUMENTS_RECEIVED">Documents Received</option>
+          <option value="UNIVERSITY_APPLIED">University Applied</option>
+          <option value="OFFER_LETTER">Offer Letter</option>
+          <option value="VISA_PROCESS">Visa Process</option>
+          <option value="ADMISSION_CLOSED">Admission Closed</option>
           <option value="LOST">Lost</option>
-          <option value="JUNK">Junk</option>
+        </select>
+
+        <select className="form-control" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+          <option value="">-- All Categories --</option>
+          <option value="STUDY_ABROAD">Study Abroad</option>
+          <option value="IELTS">IELTS</option>
+          <option value="PTE">PTE</option>
+          <option value="ENGLISH_SPEAKING">English Speaking</option>
+          <option value="COMPUTER_COURSE">Computer Course</option>
+          <option value="DIGITAL_MARKETING">Digital Marketing</option>
+          <option value="OTHER">Other</option>
         </select>
 
         <select className="form-control" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
@@ -364,17 +401,19 @@ export default function LeadsPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '20px' }}>
               <select className="form-control" style={{ padding: '2px 6px' }} value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
                 <option value="">-- Status --</option>
-                <option value="NEW">New</option>
+                <option value="NEW_LEAD">New Lead</option>
                 <option value="CONTACTED">Contacted</option>
-                <option value="COUNSELLING">Counselling</option>
-                <option value="COUNTRY_SELECTION">Country Selection</option>
-                <option value="UNIVERSITY_SHORTLISTING">University Shortlisting</option>
-                <option value="APPLICATION_SUBMITTED">Application Submitted</option>
-                <option value="OFFER_LETTER_RECEIVED">Offer Received</option>
-                <option value="VISA_PROCESSING">Visa Processing</option>
-                <option value="ENROLLED">Enrolled</option>
-                <option value="LOST">Lost</option>
-                <option value="JUNK">Junk</option>
+                <option value="COUNSELLING_SCHEDULED">Counselling Scheduled</option>
+                <option value="COUNSELLING_COMPLETED">Counselling Completed</option>
+                <option value="DOCUMENTS_PENDING">Documents Pending</option>
+                <option value="DOCUMENTS_RECEIVED">Documents Received</option>
+                <option value="UNIVERSITY_APPLIED">University Applied</option>
+                <option value="OFFER_LETTER_RECEIVED">Offer Letter Received</option>
+                <option value="OFFER_ACCEPTED">Offer Accepted</option>
+                <option value="VISA_PROCESS">Visa Process</option>
+                <option value="VISA_APPROVED">Visa Approved</option>
+                <option value="ADMISSION_CLOSED">Admission Closed</option>
+                <option value="LOST_NOT_INTERESTED">Lost / Not Interested</option>
               </select>
               <button className="btn btn-primary btn-sm" onClick={handleBulkStatusUpdate}>
                 Apply
@@ -418,7 +457,9 @@ export default function LeadsPage() {
                     />
                   </th>
                   <th>Name</th>
+                  <th>Readiness</th>
                   <th>Phone</th>
+                  <th>Category</th>
                   <th>Country</th>
                   <th>Course</th>
                   <th>Status</th>
@@ -452,7 +493,26 @@ export default function LeadsPage() {
                           )}
                         </a>
                       </td>
+                      <td>
+                        <span
+                          className="badge"
+                          style={{
+                            backgroundColor:
+                              (lead.readinessScore ?? 0) >= 80 ? '#dcfce7' : (lead.readinessScore ?? 0) >= 50 ? '#fef9c3' : '#fee2e2',
+                            color:
+                              (lead.readinessScore ?? 0) >= 80 ? '#166534' : (lead.readinessScore ?? 0) >= 50 ? '#854d0e' : '#991b1b',
+                            fontWeight: 700
+                          }}
+                        >
+                          {lead.readinessScore ?? 0}%
+                        </span>
+                      </td>
                       <td>{lead.phone || '—'}</td>
+                      <td>
+                        <span className="badge" style={{ backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid var(--border-color)' }}>
+                          {lead.leadCategory ? lead.leadCategory.replace(/_/g, ' ') : 'STUDY ABROAD'}
+                        </span>
+                      </td>
                       <td>{lead.studentProfile?.targetCountry || '—'}</td>
                       <td>{lead.studentProfile?.targetCourse || '—'}</td>
                       <td>
@@ -557,37 +617,16 @@ export default function LeadsPage() {
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <div className="form-group" style={{ flex: 1 }}>
-                <label>Target Country</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="e.g. Canada"
-                  value={createForm.targetCountry}
-                  onChange={(e) => setCreateForm({ ...createForm, targetCountry: e.target.value })}
-                />
-              </div>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label>Target Course</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="e.g. MBA"
-                  value={createForm.targetCourse}
-                  onChange={(e) => setCreateForm({ ...createForm, targetCourse: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label>Intake Period</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="e.g. Winter 2027"
-                  value={createForm.intake}
-                  onChange={(e) => setCreateForm({ ...createForm, intake: e.target.value })}
-                />
+                <label>Lead Category *</label>
+                <select className="form-control" value={createForm.leadCategory} onChange={(e) => setCreateForm({ ...createForm, leadCategory: e.target.value })}>
+                  <option value="STUDY_ABROAD">Study Abroad</option>
+                  <option value="IELTS">IELTS</option>
+                  <option value="PTE">PTE</option>
+                  <option value="ENGLISH_SPEAKING">English Speaking</option>
+                  <option value="COMPUTER_COURSE">Computer Course</option>
+                  <option value="DIGITAL_MARKETING">Digital Marketing</option>
+                  <option value="OTHER">Other</option>
+                </select>
               </div>
               <div className="form-group" style={{ flex: 1 }}>
                 <label>Lead Source</label>
@@ -600,6 +639,95 @@ export default function LeadsPage() {
                 </select>
               </div>
             </div>
+
+            {/* Category-Specific Fields */}
+            {createForm.leadCategory === 'STUDY_ABROAD' && (
+              <>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Preferred Country</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Canada"
+                      value={createForm.preferredCountry}
+                      onChange={(e) => setCreateForm({ ...createForm, preferredCountry: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Intended Intake</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Fall 2026"
+                      value={createForm.intendedIntake}
+                      onChange={(e) => setCreateForm({ ...createForm, intendedIntake: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Planning Timeline</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Within 3 Months"
+                    value={createForm.planningTimeline}
+                    onChange={(e) => setCreateForm({ ...createForm, planningTimeline: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
+
+            {(createForm.leadCategory === 'IELTS' || createForm.leadCategory === 'PTE') && (
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>English Level</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Intermediate"
+                    value={createForm.englishLevel}
+                    onChange={(e) => setCreateForm({ ...createForm, englishLevel: e.target.value })}
+                  />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Target Score</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. 7.5 or 70"
+                    value={createForm.targetScore}
+                    onChange={(e) => setCreateForm({ ...createForm, targetScore: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+
+            {createForm.leadCategory === 'ENGLISH_SPEAKING' && (
+              <div className="form-group">
+                <label>Purpose</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Interview preparation"
+                  value={createForm.purpose}
+                  onChange={(e) => setCreateForm({ ...createForm, purpose: e.target.value })}
+                />
+              </div>
+            )}
+
+            {(createForm.leadCategory === 'COMPUTER_COURSE' || createForm.leadCategory === 'DIGITAL_MARKETING') && (
+              <div className="form-group">
+                <label>Course Interested In</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Full Stack Development"
+                  value={createForm.courseInterest}
+                  onChange={(e) => setCreateForm({ ...createForm, courseInterest: e.target.value })}
+                />
+              </div>
+            )}
 
             <div className="form-group">
               <label>Scoping Branch</label>

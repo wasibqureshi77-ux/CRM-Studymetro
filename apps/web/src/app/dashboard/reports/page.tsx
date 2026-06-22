@@ -3,9 +3,84 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../../lib/api';
 
+const PIPELINE_CONFIG: Record<string, { code: string; label: string; color: string }[]> = {
+  STUDY_ABROAD: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'COUNSELLING', label: 'Counselling', color: '#6366f1' },
+    { code: 'DOCUMENTS_PENDING', label: 'Documents Pending', color: '#f59e0b' },
+    { code: 'DOCUMENTS_RECEIVED', label: 'Documents Received', color: '#d97706' },
+    { code: 'UNIVERSITY_APPLIED', label: 'University Applied', color: '#3b82f6' },
+    { code: 'OFFER_LETTER', label: 'Offer Letter Received', color: '#ec4899' },
+    { code: 'VISA_PROCESS', label: 'Visa Process', color: '#f43f5e' },
+    { code: 'ADMISSION_CLOSED', label: 'Admission Closed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  IELTS: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'DEMO_CLASS', label: 'Demo Class', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'TRAINING', label: 'Training', color: '#6366f1' },
+    { code: 'EXAM_BOOKED', label: 'Exam Booked', color: '#ec4899' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  PTE: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'DEMO_CLASS', label: 'Demo Class', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'TRAINING', label: 'Training', color: '#6366f1' },
+    { code: 'EXAM_BOOKED', label: 'Exam Booked', color: '#ec4899' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  ENGLISH_SPEAKING: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'DEMO_CLASS', label: 'Demo Class', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'TRAINING', label: 'Training', color: '#6366f1' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  COMPUTER_COURSE: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'COUNSELLING', label: 'Counselling', color: '#6366f1' },
+    { code: 'DEMO_SESSION', label: 'Demo Session', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'COURSE_ONGOING', label: 'Course Ongoing', color: '#a855f7' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  DIGITAL_MARKETING: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'COUNSELLING', label: 'Counselling', color: '#6366f1' },
+    { code: 'DEMO_SESSION', label: 'Demo Session', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'COURSE_ONGOING', label: 'Course Ongoing', color: '#a855f7' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  OTHER: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'COUNSELLING', label: 'Counselling', color: '#6366f1' },
+    { code: 'DEMO_SESSION', label: 'Demo Session', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'COURSE_ONGOING', label: 'Course Ongoing', color: '#a855f7' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ]
+};
+
 export default function ReportsPage() {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState<string>('STUDY_ABROAD');
   const [errorMsg, setErrorMsg] = useState('');
 
   const loadData = async () => {
@@ -33,11 +108,12 @@ export default function ReportsPage() {
     );
   }
 
-  const totalLeads = leads.length;
+  const filteredLeads = leads.filter(l => (l.leadCategory || 'STUDY_ABROAD') === selectedCategory);
+  const totalLeads = filteredLeads.length;
 
   // 1. Monthly Leads Calculation
   const monthlyMap: Record<string, number> = {};
-  leads.forEach((l) => {
+  filteredLeads.forEach((l) => {
     const d = new Date(l.createdAt);
     const label = d.toLocaleString('default', { month: 'long', year: 'numeric' });
     monthlyMap[label] = (monthlyMap[label] || 0) + 1;
@@ -50,7 +126,7 @@ export default function ReportsPage() {
 
   // 2. Lead Sources Calculation
   const sourcesMap: Record<string, number> = {};
-  leads.forEach((l) => {
+  filteredLeads.forEach((l) => {
     const src = l.source || 'MANUAL';
     sourcesMap[src] = (sourcesMap[src] || 0) + 1;
   });
@@ -62,7 +138,7 @@ export default function ReportsPage() {
 
   // 3. Country Interest Calculation
   const countryMap: Record<string, number> = {};
-  leads.forEach((l) => {
+  filteredLeads.forEach((l) => {
     const country = l.studentProfile?.targetCountry || 'Not Specified';
     countryMap[country] = (countryMap[country] || 0) + 1;
   });
@@ -73,20 +149,10 @@ export default function ReportsPage() {
   })).sort((a, b) => b.count - a.count);
 
   // 4. Conversion Funnel Calculation
-  const funnelStages = [
-    { label: 'New Lead', status: 'NEW', color: '#3b82f6' },
-    { label: 'Contacted', status: 'CONTACTED', color: '#f59e0b' },
-    { label: 'Counselling', status: 'COUNSELLING', color: '#8b5cf6' },
-    { label: 'Country Selection', status: 'COUNTRY_SELECTION', color: '#6366f1' },
-    { label: 'University Shortlisting', status: 'UNIVERSITY_SHORTLISTING', color: '#ec4899' },
-    { label: 'Application Submitted', status: 'APPLICATION_SUBMITTED', color: '#06b6d4' },
-    { label: 'Offer Received', status: 'OFFER_LETTER_RECEIVED', color: '#14b8a6' },
-    { label: 'Visa Processing', status: 'VISA_PROCESSING', color: '#f43f5e' },
-    { label: 'Enrolled', status: 'ENROLLED', color: '#10b981' }
-  ];
+  const funnelStages = PIPELINE_CONFIG[selectedCategory] || PIPELINE_CONFIG.STUDY_ABROAD;
 
   const funnelData = funnelStages.map((stage) => {
-    const count = leads.filter((l) => l.status === stage.status).length;
+    const count = filteredLeads.filter((l) => l.status === stage.code).length;
     return {
       stage: stage.label,
       count,
@@ -97,11 +163,39 @@ export default function ReportsPage() {
 
   return (
     <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px', paddingBottom: '50px' }}>
-      <div>
-        <h2 style={{ fontSize: '15px', fontWeight: 700 }}>Study Metro CRM Operational Reports</h2>
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          High-density analytics compiled in real time from active candidate records. Total Leads in scope: <strong>{totalLeads}</strong>.
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>Study Metro CRM Operational Reports</h2>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+            High-density analytics compiled in real time from active candidate records. Total Leads in scope: <strong>{totalLeads}</strong>.
+          </p>
+        </div>
+
+        {/* Category selector filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Category View:</label>
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              borderRadius: '6px',
+              border: '1px solid var(--border-color)',
+              backgroundColor: '#fff',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="STUDY_ABROAD">Study Abroad</option>
+            <option value="IELTS">IELTS</option>
+            <option value="PTE">PTE</option>
+            <option value="ENGLISH_SPEAKING">English Speaking</option>
+            <option value="COMPUTER_COURSE">Computer Course</option>
+            <option value="DIGITAL_MARKETING">Digital Marketing</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
       </div>
 
       {errorMsg && (
