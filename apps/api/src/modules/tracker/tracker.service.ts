@@ -272,7 +272,9 @@ export class TrackerService {
 
     if (existingLead) {
       // Prevent duplicates: link current visitor, and create match activity log
-      const updateData: any = {};
+      const updateData: any = {
+        submissionCount: { increment: 1 }
+      };
       if (!existingLead.visitorId) {
         updateData.visitorId = dto.visitorId;
       }
@@ -295,13 +297,29 @@ export class TrackerService {
         };
       }
 
-      if (Object.keys(updateData).length > 0) {
-        existingLead = await this.prisma.lead.update({
-          where: { id: existingLead.id },
-          data: updateData,
-          include: { studentProfile: true }
-        });
-      }
+      existingLead = await this.prisma.lead.update({
+        where: { id: existingLead.id },
+        data: updateData,
+        include: { studentProfile: true }
+      });
+
+      // Create Submission record
+      await this.prisma.leadSubmission.create({
+        data: {
+          leadId: existingLead.id,
+          country,
+          course,
+          intake,
+          source: existingLead.source,
+          utmSource: dto.utmSource || null,
+          utmMedium: dto.utmMedium || null,
+          utmCampaign: dto.utmCampaign || null,
+          utmContent: dto.utmContent || null,
+          utmTerm: dto.utmTerm || null,
+          referrer: dto.referrer || null,
+          landingPage: dto.url || null
+        }
+      });
 
       // Sync past events to WEBSITE_VISIT activities
       await this.syncPastEventsToActivities(dto.visitorId, existingLead.id);
@@ -365,11 +383,27 @@ export class TrackerService {
         visitorId: dto.visitorId,
         source: sourceVal,
         status: 'NEW',
+        submissionCount: 1,
         studentProfile: {
           create: {
             targetCountry: country,
             targetCourse: course,
             intake: intake
+          }
+        },
+        submissions: {
+          create: {
+            country,
+            course,
+            intake,
+            source: sourceVal,
+            utmSource: dto.utmSource || null,
+            utmMedium: dto.utmMedium || null,
+            utmCampaign: dto.utmCampaign || null,
+            utmContent: dto.utmContent || null,
+            utmTerm: dto.utmTerm || null,
+            referrer: dto.referrer || null,
+            landingPage: dto.url || null
           }
         }
       },

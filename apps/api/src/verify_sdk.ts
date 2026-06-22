@@ -80,156 +80,96 @@ async function verify() {
   }
   console.log('   ✅ Website visit tracked successfully!');
 
-  // 4. Send leadForm interception payload
-  console.log('\n⏳ 4. Submitting leadForm...');
-  const formRes1 = await fetch(`${API_URL}/api/v1/tracker/form`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'studymetro-global' },
-    body: JSON.stringify({
-      visitorId,
-      sessionId,
-      formFields: {
-        name: 'Sarah LeadForm',
-        email: 'leadform-verify@studymetro.com',
-        phone: '+1111111111',
-        country: 'United Kingdom',
-        course: 'MSc Data Science',
-        intake: 'September 2026'
-      },
-      url: 'http://localhost:3000/dashboard/tracker-test',
-      referrer: 'http://google.com',
-      utmSource: 'google',
-      utmMedium: 'cpc',
-      utmCampaign: 'winter_promo'
-    })
-  });
-  if (!formRes1.ok) {
-    throw new Error(`Failed to ingest leadForm: ${await formRes1.text()}`);
-  }
-  console.log('   ✅ leadForm ingested successfully!');
-
-  // 5. Send contactPageForm interception payload
-  console.log('\n⏳ 5. Submitting contactPageForm...');
-  const formRes2 = await fetch(`${API_URL}/api/v1/tracker/form`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'studymetro-global' },
-    body: JSON.stringify({
-      visitorId,
-      sessionId,
-      formFields: {
-        name: 'John ContactPageForm',
-        email: 'contactpageform-verify@studymetro.com',
-        phone: '+2222222222',
-        country: 'Canada',
-        course: 'MBA',
-        intake: 'January 2027'
-      },
-      url: 'http://localhost:3000/dashboard/tracker-test',
-      referrer: 'http://google.com',
-      utmSource: 'google',
-      utmMedium: 'cpc',
-      utmCampaign: 'winter_promo'
-    })
-  });
-  if (!formRes2.ok) {
-    throw new Error(`Failed to ingest contactPageForm: ${await formRes2.text()}`);
-  }
-  console.log('   ✅ contactPageForm ingested successfully!');
-
-  // 6. Send modalLeadForm interception payload
-  console.log('\n⏳ 6. Submitting modalLeadForm...');
-  const formRes3 = await fetch(`${API_URL}/api/v1/tracker/form`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'studymetro-global' },
-    body: JSON.stringify({
-      visitorId,
-      sessionId,
-      formFields: {
-        name: 'Alice ModalLeadForm',
-        email: 'modalleadform-verify@studymetro.com',
-        phone: '+3333333333',
-        country: 'Australia',
-        course: 'Information Technology',
-        intake: 'February 2027'
-      },
-      url: 'http://localhost:3000/dashboard/tracker-test',
-      referrer: 'http://google.com',
-      utmSource: 'google',
-      utmMedium: 'cpc',
-      utmCampaign: 'winter_promo'
-    })
-  });
-  if (!formRes3.ok) {
-    throw new Error(`Failed to ingest modalLeadForm: ${await formRes3.text()}`);
-  }
-  console.log('   ✅ modalLeadForm ingested successfully!');
-
-  // 7. DB Verification
-  console.log('\n⏳ 7. Verifying database records...');
+  // 4. Submit same form 3 times to test deduplication & history
+  console.log('\n⏳ 4. Submitting form 3 times with same email/phone...');
   
-  // A. Check Lead 1 (leadForm)
-  const lead1 = await prisma.lead.findFirst({
-    where: { email: 'leadform-verify@studymetro.com' },
-    include: { studentProfile: true, activities: true }
-  });
-  if (!lead1) throw new Error('Lead 1 (leadForm) not found in DB!');
+  const formPayloads = [
+    {
+      name: 'Deduplication Test Lead',
+      email: 'dedup-verify@studymetro.com',
+      phone: '+99999999999',
+      country: 'United Kingdom',
+      course: 'MSc Data Science',
+      intake: 'September 2026'
+    },
+    {
+      name: 'Deduplication Test Lead',
+      email: 'dedup-verify@studymetro.com',
+      phone: '+99999999999',
+      country: 'Canada',
+      course: 'MBA',
+      intake: 'January 2027'
+    },
+    {
+      name: 'Deduplication Test Lead',
+      email: 'dedup-verify@studymetro.com',
+      phone: '+99999999999',
+      country: 'Australia',
+      course: 'Information Technology',
+      intake: 'February 2027'
+    }
+  ];
+
+  for (let i = 0; i < formPayloads.length; i++) {
+    console.log(`   Submitting Request #${i + 1}...`);
+    const formRes = await fetch(`${API_URL}/api/v1/tracker/form`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'studymetro-global' },
+      body: JSON.stringify({
+        visitorId,
+        sessionId,
+        formFields: formPayloads[i],
+        url: 'http://localhost:3000/dashboard/tracker-test',
+        referrer: 'http://google.com',
+        utmSource: 'google',
+        utmMedium: 'cpc',
+        utmCampaign: 'winter_promo'
+      })
+    });
+    if (!formRes.ok) {
+      throw new Error(`Failed to ingest form request #${i + 1}: ${await formRes.text()}`);
+    }
+  }
+  console.log('   ✅ All 3 form requests ingested successfully!');
+
+  // 5. DB Verification
+  console.log('\n⏳ 5. Verifying database records for deduplication & submission history...');
   
-  const lead1Checks = {
-    profileCreated: !!lead1.studentProfile,
-    countryAttributed: lead1.studentProfile?.targetCountry === 'United Kingdom',
-    courseAttributed: lead1.studentProfile?.targetCourse === 'MSc Data Science',
-    intakeAttributed: lead1.studentProfile?.intake === 'September 2026',
-    sourceAttributed: lead1.source === 'WEBSITE_SDK',
-    visitorLinked: lead1.visitorId === visitorId
-  };
-
-  // B. Check Lead 2 (contactPageForm)
-  const lead2 = await prisma.lead.findFirst({
-    where: { email: 'contactpageform-verify@studymetro.com' },
-    include: { studentProfile: true, activities: true }
+  // A. Check that only ONE lead was created for the email
+  const leadsCount = await prisma.lead.count({
+    where: { email: 'dedup-verify@studymetro.com', deletedAt: null }
   });
-  if (!lead2) throw new Error('Lead 2 (contactPageForm) not found in DB!');
 
-  const lead2Checks = {
-    profileCreated: !!lead2.studentProfile,
-    countryAttributed: lead2.studentProfile?.targetCountry === 'Canada',
-    courseAttributed: lead2.studentProfile?.targetCourse === 'MBA',
-    intakeAttributed: lead2.studentProfile?.intake === 'January 2027',
-    sourceAttributed: lead2.source === 'WEBSITE_SDK',
-    visitorLinked: lead2.visitorId === visitorId
-  };
-
-  // C. Check Lead 3 (modalLeadForm)
-  const lead3 = await prisma.lead.findFirst({
-    where: { email: 'modalleadform-verify@studymetro.com' },
-    include: { studentProfile: true, activities: true }
+  const lead = await prisma.lead.findFirst({
+    where: { email: 'dedup-verify@studymetro.com', deletedAt: null },
+    include: { studentProfile: true, activities: true, submissions: { orderBy: { createdAt: 'desc' } } }
   });
-  if (!lead3) throw new Error('Lead 3 (modalLeadForm) not found in DB!');
 
-  const lead3Checks = {
-    profileCreated: !!lead3.studentProfile,
-    countryAttributed: lead3.studentProfile?.targetCountry === 'Australia',
-    courseAttributed: lead3.studentProfile?.targetCourse === 'Information Technology',
-    intakeAttributed: lead3.studentProfile?.intake === 'February 2027',
-    sourceAttributed: lead3.source === 'WEBSITE_SDK',
-    visitorLinked: lead3.visitorId === visitorId
+  if (!lead) throw new Error('Lead not found in DB!');
+
+  const leadChecks = {
+    oneRecordOnly: leadsCount === 1,
+    submissionCountIs3: lead.submissionCount === 3,
+    profileMatchesLatest: lead.studentProfile?.targetCountry === 'Australia' &&
+                          lead.studentProfile?.targetCourse === 'Information Technology' &&
+                          lead.studentProfile?.intake === 'February 2027',
+    hasThreeSubmissions: lead.submissions.length === 3,
+    latestSubmissionIsFirst: lead.submissions[0].country === 'Australia' &&
+                             lead.submissions[0].course === 'Information Technology' &&
+                             lead.submissions[0].intake === 'February 2027',
+    middleSubmissionIsSecond: lead.submissions[1].country === 'Canada' &&
+                              lead.submissions[1].course === 'MBA' &&
+                              lead.submissions[1].intake === 'January 2027',
+    oldestSubmissionIsThird: lead.submissions[2].country === 'United Kingdom' &&
+                             lead.submissions[2].course === 'MSc Data Science' &&
+                             lead.submissions[2].intake === 'September 2026'
   };
 
-  // D. Check Activities logging (WEBSITE_VISIT, FORM_SUBMITTED, LEAD_CREATED)
-  const activities1 = lead1.activities.map(a => a.type);
-  const activities2 = lead2.activities.map(a => a.type);
-  const activities3 = lead3.activities.map(a => a.type);
-
+  // Timeline check (activities and timeline API simulation)
+  const activities = lead.activities.map(a => a.type);
   const timelineChecks = {
-    visitLogged1: activities1.includes('WEBSITE_VISIT'),
-    submitLogged1: activities1.includes('FORM_SUBMITTED'),
-    createdLogged1: activities1.includes('LEAD_CREATED'),
-    visitLogged2: activities2.includes('WEBSITE_VISIT'),
-    submitLogged2: activities2.includes('FORM_SUBMITTED'),
-    createdLogged2: activities2.includes('LEAD_CREATED'),
-    visitLogged3: activities3.includes('WEBSITE_VISIT'),
-    submitLogged3: activities3.includes('FORM_SUBMITTED'),
-    createdLogged3: activities3.includes('LEAD_CREATED')
+    leadCreatedLogged: activities.includes('LEAD_CREATED'),
+    formSubmissionsLogged: lead.activities.filter(a => a.type === 'FORM_SUBMITTED').length === 3,
   };
 
   // Output Verification Table
@@ -237,39 +177,25 @@ async function verify() {
   console.log('📊           CRM LEAD INGESTION VERIFICATION REPORT           ');
   console.log('=============================================================');
   printCheck('SDK script loaded on GET request', true);
-  printCheck('Visitor ID generation verified', true);
-  printCheck('Session ID generation verified', true);
-  printCheck('leadForm Interception Ingested', true);
-  printCheck('contactPageForm Interception Ingested', true);
-  printCheck('modalLeadForm Interception Ingested', true);
-  printCheck('CRM Database Lead 1 (leadForm) Created', lead1Checks.profileCreated);
-  printCheck('CRM Database Lead 2 (contactPageForm) Created', lead2Checks.profileCreated);
-  printCheck('CRM Database Lead 3 (modalLeadForm) Created', lead3Checks.profileCreated);
-  printCheck('Attributed Lead Source: WEBSITE_SDK', lead1Checks.sourceAttributed && lead2Checks.sourceAttributed && lead3Checks.sourceAttributed);
-  printCheck('Attributed Visitor ID Linked to Leads', lead1Checks.visitorLinked && lead2Linked(lead2Checks.visitorLinked) && lead2Linked(lead3Checks.visitorLinked));
-  printCheck('Target Country captured: UK, Canada, Australia', lead1Checks.countryAttributed && lead2Checks.countryAttributed && lead3Checks.countryAttributed);
-  printCheck('Target Course captured: CS, MBA, IT', lead1Checks.courseAttributed && lead2Checks.courseAttributed && lead3Checks.courseAttributed);
-  printCheck('Intake period captured: Spring, Winter, Fall', lead1Checks.intakeAttributed && lead2Checks.intakeAttributed && lead3Checks.intakeAttributed);
-  printCheck('Timeline Entry: WEBSITE_VISIT generated', timelineChecks.visitLogged1 && timelineChecks.visitLogged2 && timelineChecks.visitLogged3);
-  printCheck('Timeline Entry: FORM_SUBMITTED generated', timelineChecks.submitLogged1 && timelineChecks.submitLogged2 && timelineChecks.submitLogged3);
-  printCheck('Timeline Entry: LEAD_CREATED generated', timelineChecks.createdLogged1 && timelineChecks.createdLogged2 && timelineChecks.createdLogged3);
+  printCheck('Deduplication: Only ONE Lead Record in DB', leadChecks.oneRecordOnly);
+  printCheck('Deduplication: Lead Submission Count = 3', leadChecks.submissionCountIs3);
+  printCheck('Lead History: 3 LeadSubmission records created', leadChecks.hasThreeSubmissions);
+  printCheck('Latest Profile matches latest form input', leadChecks.profileMatchesLatest);
+  printCheck('Submission #3 matches latest submission values', leadChecks.latestSubmissionIsFirst);
+  printCheck('Submission #2 matches second submission values', leadChecks.middleSubmissionIsSecond);
+  printCheck('Submission #1 matches first submission values', leadChecks.oldestSubmissionIsThird);
+  printCheck('Chronological form submissions tracked in activities', timelineChecks.formSubmissionsLogged);
   console.log('=============================================================');
   
-  const allPassed = Object.values(lead1Checks).every(Boolean) && 
-                    Object.values(lead2Checks).every(Boolean) && 
-                    Object.values(lead3Checks).every(Boolean) && 
+  const allPassed = Object.values(leadChecks).every(Boolean) && 
                     Object.values(timelineChecks).every(Boolean);
 
   if (allPassed) {
-    console.log('\n🏆 PRODUCTION VERIFICATION: ALL END-TO-END FLOW CHECKS PASSED!');
+    console.log('\n🏆 DEDUPLICATION VERIFICATION: ALL END-TO-END FLOW CHECKS PASSED!');
   } else {
-    console.error('\n❌ PRODUCTION VERIFICATION: SOME CHECKS FAILED.', { lead1Checks, lead2Checks, lead3Checks, timelineChecks });
+    console.error('\n❌ DEDUPLICATION VERIFICATION: SOME CHECKS FAILED.', { leadChecks, timelineChecks });
     process.exit(1);
   }
-}
-
-function lead2Linked(val: any) {
-  return !!val;
 }
 
 function printCheck(description: string, status: boolean) {

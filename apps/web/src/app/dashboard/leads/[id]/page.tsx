@@ -34,6 +34,7 @@ export default function LeadDetailPage() {
   const [pdfPassword, setPdfPassword] = useState('');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
+  const [openRequestIndex, setOpenRequestIndex] = useState<number | null>(0);
 
   const addToast = (type: 'success' | 'error', message: string) => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -653,10 +654,71 @@ export default function LeadDetailPage() {
             />
           </div>
 
-            <button type="submit" className="btn btn-primary" style={{ padding: '8px', marginTop: '4px' }}>
+            <button type="submit" className="btn btn-primary" style={{ padding: '8px', marginTop: '4px', width: '100%' }}>
               Save Profile Changes
             </button>
         </form>
+
+        {lead.submissions && lead.submissions.length > 0 && (
+          <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+            <div style={{ fontWeight: 700, fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>
+              Submission History ({lead.submissions.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {lead.submissions.map((sub: any, idx: number) => {
+                const isLatest = idx === 0;
+                const reqNum = lead.submissions.length - idx;
+                const isOpen = openRequestIndex === idx;
+                return (
+                  <div key={sub.id} style={{ border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenRequestIndex(isOpen ? null : idx)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        background: isOpen ? '#f1f5f9' : '#fff',
+                        border: 'none',
+                        textAlign: 'left',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        color: '#1e293b'
+                      }}
+                    >
+                      <span>
+                        Request #{reqNum} {isLatest ? '(Latest)' : ''}
+                      </span>
+                      <span>{isOpen ? '▼' : '►'}</span>
+                    </button>
+                    {isOpen && (
+                      <div style={{ padding: '12px', background: '#f8fafc', fontSize: '11px', borderTop: '1px solid var(--border-color)', color: '#334155', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div><strong>Submitted At:</strong> {new Date(sub.createdAt).toLocaleString()}</div>
+                        <div><strong>Source:</strong> {sub.source || '—'}</div>
+                        <div><strong>Target Country:</strong> {sub.country || '—'}</div>
+                        <div><strong>Target Course:</strong> {sub.course || '—'}</div>
+                        <div><strong>Intake Period:</strong> {sub.intake || '—'}</div>
+                        <div><strong>Landing Page:</strong> {sub.landingPage ? <a href={sub.landingPage} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>{sub.landingPage}</a> : '—'}</div>
+                        <div><strong>Referrer:</strong> {sub.referrer || '—'}</div>
+                        { (sub.utmSource || sub.utmMedium || sub.utmCampaign) && (
+                          <div style={{ marginTop: '4px', padding: '6px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
+                            <div style={{ fontWeight: 600, marginBottom: '2px' }}>UTM Attribution:</div>
+                            <div>Source: {sub.utmSource || '—'} | Medium: {sub.utmMedium || '—'} | Campaign: {sub.utmCampaign || '—'}</div>
+                            {sub.utmContent && <div>Content: {sub.utmContent}</div>}
+                            {sub.utmTerm && <div>Term: {sub.utmTerm}</div>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* RIGHT PANE: Chronological Timeline Tabs */}
@@ -729,6 +791,20 @@ export default function LeadDetailPage() {
                         <div className="timeline-meta">📆 FOLLOWUP scheduled for {new Date(node.data.followupDate).toLocaleString()}</div>
                         <div className="timeline-desc">
                           Agenda: {node.data.notes || 'No notes'} — Status: <strong>{node.data.status}</strong>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (type === 'submission') {
+                    return (
+                      <div key={index} className="timeline-node" style={{ borderLeftColor: '#2563eb' }}>
+                        <div className="timeline-meta">📬 Request #{node.data.requestNumber} Submitted — {dateLabel}</div>
+                        <div className="timeline-desc" style={{ background: '#eff6ff', padding: '10px', borderRadius: '6px', marginTop: '4px', borderLeft: '3px solid #3b82f6', fontSize: '11px', color: '#1e293b' }}>
+                          <div><strong>Target Country:</strong> {node.data.country || '—'}</div>
+                          <div><strong>Target Course:</strong> {node.data.course || '—'}</div>
+                          <div><strong>Intake Period:</strong> {node.data.intake || '—'}</div>
+                          {node.data.landingPage && <div><strong>Landing Page:</strong> <a href={node.data.landingPage} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>{node.data.landingPage}</a></div>}
                         </div>
                       </div>
                     );

@@ -35,6 +35,11 @@ export class LeadService {
       });
 
       if (match) {
+        await this.prisma.lead.update({
+          where: { id: match.id },
+          data: { submissionCount: { increment: 1 } }
+        });
+
         await this.prisma.activity.create({
           data: {
             leadId: match.id,
@@ -69,6 +74,7 @@ export class LeadService {
         normalizedPhone: normPhone,
         source: dto.source,
         status: LeadStatus.NEW,
+        submissionCount: 1,
         studentProfile: dto.studentProfile ? {
           create: {
             targetCountry: dto.studentProfile.targetCountry,
@@ -148,6 +154,9 @@ export class LeadService {
         } : undefined,
         AND: searchConditions.length > 0 ? searchConditions : undefined
       },
+      orderBy: {
+        createdAt: 'desc'
+      },
       include: {
         studentProfile: true,
         assignee: {
@@ -176,7 +185,8 @@ export class LeadService {
           include: { author: { select: { firstName: true, lastName: true } } }
         },
         activities: { orderBy: { createdAt: 'desc' } },
-        documents: { orderBy: { uploadedAt: 'desc' } }
+        documents: { orderBy: { uploadedAt: 'desc' } },
+        submissions: { orderBy: { createdAt: 'desc' } }
       }
     });
 
@@ -406,7 +416,8 @@ export class LeadService {
         },
         activities: { orderBy: { createdAt: 'desc' } },
         documents: { orderBy: { uploadedAt: 'desc' } },
-        followups: { orderBy: { followupDate: 'desc' } }
+        followups: { orderBy: { followupDate: 'desc' } },
+        submissions: { orderBy: { createdAt: 'desc' } }
       }
     });
 
@@ -419,7 +430,15 @@ export class LeadService {
       ...lead.activities.map(a => ({ type: 'activity', date: a.createdAt, data: a })),
       ...lead.notes.map(n => ({ type: 'note', date: n.createdAt, data: n })),
       ...lead.documents.map(d => ({ type: 'document', date: d.uploadedAt, data: d })),
-      ...lead.followups.map(f => ({ type: 'followup', date: f.createdAt, data: f }))
+      ...lead.followups.map(f => ({ type: 'followup', date: f.createdAt, data: f })),
+      ...lead.submissions.map((s, index) => ({
+        type: 'submission',
+        date: s.createdAt,
+        data: {
+          ...s,
+          requestNumber: lead.submissions.length - index
+        }
+      }))
     ];
 
     return timeline.sort((a, b) => b.date.getTime() - a.date.getTime());

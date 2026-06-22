@@ -445,6 +445,11 @@ export default function LeadsPage() {
                           style={{ color: 'var(--primary-color)', fontWeight: 600, textDecoration: 'none' }}
                         >
                           {lead.firstName || '—'} {lead.lastName || ''}
+                          {lead.submissionCount && (
+                            <span style={{ marginLeft: '6px', fontSize: '11px', color: '#475569', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
+                              [{lead.submissionCount}]
+                            </span>
+                          )}
                         </a>
                       </td>
                       <td>{lead.phone || '—'}</td>
