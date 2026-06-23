@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { api } from '../../../lib/api';
+import { api, apiFetch } from '../../../lib/api';
 
 const LEAD_CATEGORIES = [
   'STUDY_ABROAD',
@@ -78,19 +78,10 @@ export default function BrochureLibraryPage() {
       formData.append('category', category);
       formData.append('file', selectedFile);
 
-      // Using raw fetch since standard api helper might not support FormData easily
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/brochures`, {
+      await apiFetch('/api/v1/brochures', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: formData
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to upload brochure');
-      }
 
       addToast('success', 'Brochure uploaded successfully!');
       setShowUploadModal(false);
