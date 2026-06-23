@@ -7,7 +7,10 @@ import { PrismaService } from './prisma/prisma.service';
 const prisma = new PrismaService();
 const storageProvider = new LocalStorageProvider();
 const notificationService = new NotificationService(prisma);
-const service = new LeadDocumentService(prisma, notificationService, storageProvider);
+const mockCommunicationService = {
+  enqueue: async () => ({})
+} as any;
+const service = new LeadDocumentService(prisma, notificationService, storageProvider, mockCommunicationService);
 
 async function testChecklist() {
   console.log('🧪 Running Document Checklist Generation Unit Test...');

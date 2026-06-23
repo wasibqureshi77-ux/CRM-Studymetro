@@ -1,15 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto, AssignLeadDto, CreateNoteDto } from './dto/lead.dto';
-import { LeadStatus, LeadSource, LeadCategory } from '@prisma/client';
+import { LeadStatus, LeadSource, LeadCategory, CommunicationChannel } from '@prisma/client';
 
 import { LeadDocumentService } from '../document/lead-document.service';
+import { CommunicationService } from '../communication/communication.service';
 
 @Injectable()
 export class LeadService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly documentService: LeadDocumentService
+    private readonly documentService: LeadDocumentService,
+    private readonly communicationService: CommunicationService
   ) {}
 
   private normalizeEmail(email?: string): string | null {
@@ -150,6 +152,10 @@ export class LeadService {
         afterState: lead as any,
       }
     });
+
+    // Enqueue welcome communication
+    await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'WELCOME', {});
+    await this.communicationService.enqueue(lead.id, CommunicationChannel.WHATSAPP, 'WELCOME', {});
 
     return lead;
   }

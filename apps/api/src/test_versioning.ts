@@ -9,7 +9,10 @@ import * as fs from 'fs';
 const prisma = new PrismaService();
 const storageProvider = new LocalStorageProvider();
 const notificationService = new NotificationService(prisma);
-const service = new LeadDocumentService(prisma, notificationService, storageProvider);
+const mockCommunicationService = {
+  enqueue: async () => ({})
+} as any;
+const service = new LeadDocumentService(prisma, notificationService, storageProvider, mockCommunicationService);
 
 async function testVersioning() {
   console.log('🧪 Running Document Versioning & Expiry Unit Test...');

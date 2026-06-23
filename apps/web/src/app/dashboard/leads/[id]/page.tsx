@@ -59,7 +59,13 @@ export default function LeadDetailPage() {
   const [loading, setLoading] = useState(true);
 
   // Form states
-  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups' | 'applications'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups' | 'applications' | 'communications' | 'brochures'>('timeline');
+  const [commLogs, setCommLogs] = useState<any[]>([]);
+  const [brochuresList, setBrochuresList] = useState<any[]>([]);
+  const [brochureAssignments, setBrochureAssignments] = useState<any[]>([]);
+  const [showSendBrochureModal, setShowSendBrochureModal] = useState(false);
+  const [selectedBrochureId, setSelectedBrochureId] = useState('');
+  const [sendingBrochure, setSendingBrochure] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -109,24 +115,68 @@ export default function LeadDetailPage() {
     }, 4000);
   };
 
+  const handleSendBrochureSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBrochureId) {
+      alert('Please select a brochure');
+      return;
+    }
+    setSendingBrochure(true);
+    try {
+      const res = await api.post('/api/v1/brochures/assign', {
+        leadId: id,
+        brochureId: selectedBrochureId
+      });
+      addToast('success', 'Brochure assigned and secure link generated!');
+      setShowSendBrochureModal(false);
+      setSelectedBrochureId('');
+      
+      // Copy secure link to clipboard
+      const publicBase = window.location.origin;
+      const secureLink = `${publicBase}/brochure/view/${res.token}`;
+      navigator.clipboard.writeText(secureLink);
+      addToast('success', 'Secure view link copied to clipboard!');
+
+      // Refresh assignments and timeline
+      const [newAssignments, newTimeline, updatedLead] = await Promise.all([
+        api.get(`/api/v1/brochures/assignments/lead/${id}`),
+        api.get(`/api/v1/leads/${id}/timeline`),
+        api.get(`/api/v1/leads/${id}`)
+      ]);
+      setBrochureAssignments(newAssignments || []);
+      setTimeline(newTimeline || []);
+      setLead(updatedLead);
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to send brochure');
+    } finally {
+      setSendingBrochure(false);
+    }
+  };
+
   // Document Rejection Reason Dialog State
   const [rejectionDocId, setRejectionDocId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
   const loadAllData = async () => {
     try {
-      const [leadData, timelineData, usersData, branchesData, appsData] = await Promise.all([
+      const [leadData, timelineData, usersData, branchesData, appsData, commLogsData, brochuresData, assignmentsData] = await Promise.all([
         api.get(`/api/v1/leads/${id}`),
         api.get(`/api/v1/leads/${id}/timeline`),
         api.get('/api/v1/leads/meta/users'),
         api.get('/api/v1/leads/meta/branches'),
         api.get(`/api/v1/applications/lead/${id}`).catch(() => []),
+        api.get(`/api/v1/communication/logs/lead/${id}`).catch(() => []),
+        api.get('/api/v1/brochures').catch(() => []),
+        api.get(`/api/v1/brochures/assignments/lead/${id}`).catch(() => []),
       ]);
       setLead(leadData);
       setTimeline(timelineData || []);
       setUsers(usersData || []);
       setBranches(branchesData || []);
       setApplications(appsData || []);
+      setCommLogs(commLogsData || []);
+      setBrochuresList(brochuresData || []);
+      setBrochureAssignments(assignmentsData || []);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to load details.');
     } finally {
@@ -150,6 +200,26 @@ export default function LeadDetailPage() {
       });
     } catch (err) {
       console.error('Failed to load/generate checklist', err);
+    }
+  };
+
+  const handleCommunicationsTabClick = async () => {
+    setActiveTab('communications');
+    try {
+      const res = await api.get(`/api/v1/communication/logs/lead/${id}`);
+      setCommLogs(res || []);
+    } catch (err) {
+      console.error('Failed to load communication logs', err);
+    }
+  };
+
+  const handleRetryLog = async (logId: string) => {
+    try {
+      await api.post(`/api/v1/communication/logs/${logId}/retry`);
+      addToast('success', 'Email enqueued for retry!');
+      setTimeout(handleCommunicationsTabClick, 1000); // Reload logs after a brief moment
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to retry email');
     }
   };
 
@@ -1224,6 +1294,18 @@ export default function LeadDetailPage() {
               🎓 University Applications ({applications.length})
             </button>
           )}
+          <button
+            className={`tab-btn ${activeTab === 'communications' ? 'active' : ''}`}
+            onClick={handleCommunicationsTabClick}
+          >
+            💬 Communications ({commLogs.length})
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'brochures' ? 'active' : ''}`}
+            onClick={() => setActiveTab('brochures')}
+          >
+            📚 Brochures ({brochureAssignments.length})
+          </button>
         </div>
 
         <div className="tab-content">
@@ -1748,8 +1830,331 @@ export default function LeadDetailPage() {
               )}
             </div>
           )}
+
+          {activeTab === 'communications' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>💬 Communication Logs & Queue</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                    View email and WhatsApp communication history for this lead.
+                  </p>
+                </div>
+                <button
+                  onClick={handleCommunicationsTabClick}
+                  className="btn btn-xs btn-outline"
+                  style={{ display: 'flex', gap: '4px', alignItems: 'center' }}
+                >
+                  🔄 Refresh History
+                </button>
+              </div>
+
+              {commLogs.length === 0 ? (
+                <div style={{ padding: '30px', textAlign: 'center', backgroundColor: '#f8fafc', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)' }}>
+                  No communication logs found for this lead. Actions like registration, scheduled follow-ups, and university status changes will trigger automated messages.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {commLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      style={{
+                        padding: '16px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        backgroundColor: '#fff',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            backgroundColor: log.channel === 'EMAIL' ? '#e0f2fe' : '#dcfce7',
+                            color: log.channel === 'EMAIL' ? '#0369a1' : '#15803d'
+                          }}>
+                            {log.channel}
+                          </span>
+                          <span style={{ fontSize: '12px', fontWeight: 600 }}>{log.eventType}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
+                          <span><strong>To:</strong> {log.recipient}</span>
+                          <span>•</span>
+                          <span>{new Date(log.sentAt).toLocaleString()}</span>
+                          <span style={{
+                            display: 'inline-flex',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            backgroundColor:
+                              log.status === 'SENT' ? '#dcfce7' :
+                              log.status === 'FAILED' ? '#fee2e2' :
+                              log.status === 'PROCESSING' ? '#fef9c3' : '#f1f5f9',
+                            color:
+                              log.status === 'SENT' ? '#15803d' :
+                              log.status === 'FAILED' ? '#b91c1c' :
+                              log.status === 'PROCESSING' ? '#854d0e' : '#475569',
+                          }}>
+                            {log.status}
+                          </span>
+                          {log.status === 'FAILED' && (
+                            <button
+                              onClick={() => handleRetryLog(log.id)}
+                              className="btn btn-xs"
+                              style={{
+                                padding: '2px 6px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                marginLeft: '6px',
+                                cursor: 'pointer',
+                                backgroundColor: '#fee2e2',
+                                color: '#b91c1c',
+                                borderColor: '#fca5a5'
+                              }}
+                            >
+                              🔄 Retry
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{
+                        padding: '10px 12px',
+                        backgroundColor: '#f8fafc',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        whiteSpace: 'pre-wrap',
+                        borderLeft: '3px solid #cbd5e1',
+                        lineHeight: '1.4'
+                      }}>
+                        {log.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'brochures' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>📚 Brochure Analytics & Assignments</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                    Send customized brochures and track student reading activities, completion rates, and temperature rating.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const data = await api.get(`/api/v1/brochures/assignments/lead/${id}`);
+                        setBrochureAssignments(data || []);
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }}
+                    className="btn btn-xs btn-outline"
+                  >
+                    🔄 Refresh Stats
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (brochuresList.length === 0) {
+                        alert('No active brochures in the library. Go to Brochure Library to upload brochures first.');
+                        return;
+                      }
+                      setShowSendBrochureModal(true);
+                    }}
+                    className="btn btn-xs btn-primary"
+                  >
+                    🚀 Send Brochure
+                  </button>
+                </div>
+              </div>
+
+              {/* Lead Engagement Overview */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                gap: '16px',
+                padding: '16px',
+                backgroundColor: '#f8fafc',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)'
+              }}>
+                <div>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Lead Temperature</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                    <span style={{
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      color: lead?.engagementLabel === 'Hot' ? '#ea580c' : lead?.engagementLabel === 'Warm' ? '#d97706' : '#2563eb',
+                      backgroundColor: lead?.engagementLabel === 'Hot' ? '#ffedd5' : lead?.engagementLabel === 'Warm' ? '#fef3c7' : '#dbeafe',
+                      padding: '2px 8px',
+                      borderRadius: '12px'
+                    }}>{lead?.engagementLabel || 'Cold'}</span>
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Engagement Score</span>
+                  <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '4px', color: 'var(--text-color)' }}>
+                    🔥 {lead?.engagementScore || 0} pts
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Brochures Assigned</span>
+                  <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '4px', color: 'var(--text-color)' }}>
+                    📄 {brochureAssignments.length}
+                  </div>
+                </div>
+              </div>
+
+              {/* Assigned brochures List */}
+              {brochureAssignments.length === 0 ? (
+                <div style={{ padding: '30px', textAlign: 'center', backgroundColor: '#fff', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)' }}>
+                  No brochures have been sent to this student yet. Click "Send Brochure" to generate tracking links.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {brochureAssignments.map((assignment) => {
+                    const tracking = assignment.tracking || {};
+                    const readTimeMin = Math.floor((tracking.readingTime || 0) / 60);
+                    const readTimeSec = (tracking.readingTime || 0) % 60;
+                    const trackingLink = `${window.location.origin}/brochure/view/${assignment.token}`;
+
+                    return (
+                      <div
+                        key={assignment.id}
+                        style={{
+                          padding: '16px',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          backgroundColor: '#fff',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                          <div>
+                            <h4 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>{assignment.brochure.title}</h4>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Category: {assignment.brochure.category} • Sent: {new Date(assignment.assignedAt).toLocaleDateString()}</span>
+                          </div>
+                          
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(trackingLink);
+                              alert('Secure link copied to clipboard!');
+                            }}
+                            className="btn btn-xs btn-outline"
+                          >
+                            🔗 Copy Tracking Link
+                          </button>
+                        </div>
+
+                        {/* Metrics grid */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+                          gap: '8px',
+                          backgroundColor: '#f8fafc',
+                          padding: '10px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)'
+                        }}>
+                          <div style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Opened</span>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: tracking.opened ? 'var(--success-color)' : 'var(--danger-color)', marginTop: '2px' }}>
+                              {tracking.opened ? '🟢 Yes' : '🔴 No'}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Reading Time</span>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--text-color)' }}>
+                              {readTimeMin}m {readTimeSec}s
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Page Views</span>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--text-color)' }}>
+                              {tracking.pageViews || 0} views
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Completion</span>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#10b981', marginTop: '2px' }}>
+                              {Math.round(tracking.completionPercentage || 0)}%
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Last Page</span>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--text-color)' }}>
+                              Pg {tracking.lastPageViewed || 0}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Downloads</span>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--text-color)' }}>
+                              📥 {tracking.downloadCount || 0}
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
+
+      {/* Send Brochure Modal */}
+      {showSendBrochureModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="login-card" style={{ width: '450px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '16px' }}>Send Brochure Link to Lead</h3>
+            <form onSubmit={handleSendBrochureSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Select Brochure from Library</label>
+                <select
+                  className="form-control"
+                  value={selectedBrochureId}
+                  onChange={(e) => setSelectedBrochureId(e.target.value)}
+                  required
+                >
+                  <option value="">-- Choose Brochure --</option>
+                  {brochuresList.map((b: any) => (
+                    <option key={b.id} value={b.id} disabled={!b.isActive}>
+                      {b.title} ({b.category}) {!b.isActive ? '[Disabled]' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
+                <button type="button" className="btn" onClick={() => { setShowSendBrochureModal(false); setSelectedBrochureId(''); }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={sendingBrochure}>
+                  {sendingBrochure ? 'Assigning...' : 'Assign & Copy Link'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Version History Modal */}
       {historyDocType && (

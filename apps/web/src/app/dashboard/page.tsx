@@ -55,6 +55,7 @@ export default function DashboardPage() {
   const [expiringDocs, setExpiringDocs] = useState<any[]>([]);
   const [pendingVerificationCount, setPendingVerificationCount] = useState(0);
   const [uniWidgets, setUniWidgets] = useState<any>(null);
+  const [commStats, setCommStats] = useState<any>({ messagesSentToday: 0, pendingQueue: 0, failedMessages: 0, upcomingFollowups: 0 });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -83,22 +84,25 @@ export default function DashboardPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-
   const loadData = async () => {
     try {
-      const [leadsData, followupsData, activitiesData, expiringData, allDocs, uniWidgetsData] = await Promise.all([
+      const [leadsData, followupsData, activitiesData, expiringData, allDocs, uniWidgetsData, commStatsData] = await Promise.all([
         api.get('/api/v1/leads'),
         api.get('/api/v1/followups'),
         api.get('/api/v1/leads/meta/activities'),
         api.get('/api/v1/documents/expiring?days=90'),
         api.get('/api/v1/documents'),
-        api.get('/api/v1/applications/dashboard/widgets').catch(() => null)
+        api.get('/api/v1/applications/dashboard/widgets').catch(() => null),
+        api.get('/api/v1/communication/dashboard/stats').catch(() => null)
       ]);
       setLeads(leadsData || []);
       setFollowups(followupsData || []);
       setActivities(activitiesData || []);
       setExpiringDocs(expiringData || []);
       setUniWidgets(uniWidgetsData);
+      if (commStatsData) {
+        setCommStats(commStatsData);
+      }
 
       // Filter documents where status is UPLOADED (Pending counselor verification)
       const pendingCount = (allDocs || []).filter((d: any) => d.status === 'UPLOADED').length;
@@ -350,6 +354,33 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Communication Hub Stats */}
+      <div style={{ padding: '0 20px', marginTop: '16px' }}>
+        <div style={{ backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+            💬 Communication Hub Statistics
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+            <div style={{ padding: '8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: '#166534', fontWeight: 700 }}>Messages Sent Today</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#16a34a', marginTop: '4px' }}>{commStats.messagesSentToday}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: '#1e40af', fontWeight: 700 }}>Pending Queue</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#2563eb', marginTop: '4px' }}>{commStats.pendingQueue}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: '#991b1b', fontWeight: 700 }}>Failed Messages</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#dc2626', marginTop: '4px' }}>{commStats.failedMessages}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: '#854d0e', fontWeight: 700 }}>Upcoming Followups</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>{commStats.upcomingFollowups}</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Category Counters Grid */}
       <div style={{ padding: '0 20px', marginTop: '16px' }}>

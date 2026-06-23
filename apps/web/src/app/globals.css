@@ -39,13 +39,16 @@ body {
 }
 
 .sidebar {
-  width: 220px;
+  width: 240px;
   background-color: var(--sidebar-bg);
   color: var(--sidebar-text);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   border-right: 1px solid var(--sidebar-active);
+  position: sticky;
+  top: 0;
+  height: 100vh;
 }
 
 .sidebar-brand {
@@ -78,6 +81,7 @@ body {
   background: none;
   text-align: left;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 

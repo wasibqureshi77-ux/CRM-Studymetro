@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateApplicationDto, UpdateApplicationStatusDto } from './dto/application.dto';
-import { ApplicationStatus, OfferStatus, VisaStatus, LeadStatus } from '@prisma/client';
+import { ApplicationStatus, OfferStatus, VisaStatus, LeadStatus, CommunicationChannel } from '@prisma/client';
+import { CommunicationService } from '../communication/communication.service';
 
 @Injectable()
 export class ApplicationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly communicationService: CommunicationService
+  ) {}
 
   async create(dto: CreateApplicationDto, tenantId: string, actorId: string) {
     // 1. Verify Lead exists under Tenant and category is STUDY_ABROAD
@@ -157,6 +161,10 @@ export class ApplicationService {
             meta: { applicationId: id }
           }
         });
+
+        // Enqueue Application Submitted communication
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'APPLICATION_SUBMITTED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'APPLICATION_SUBMITTED', {});
       }
     }
 
@@ -171,6 +179,10 @@ export class ApplicationService {
             meta: { applicationId: id, offerType: dto.offerStatus }
           }
         });
+
+        // Enqueue Offer Received communication
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'OFFER_RECEIVED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'OFFER_RECEIVED', {});
       } else if (dto.offerStatus === OfferStatus.OFFER_ACCEPTED) {
         await this.prisma.activity.create({
           data: {
@@ -181,6 +193,10 @@ export class ApplicationService {
             meta: { applicationId: id }
           }
         });
+
+        // Enqueue Offer Accepted communication
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'OFFER_ACCEPTED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'OFFER_ACCEPTED', {});
       }
     }
 
@@ -195,6 +211,10 @@ export class ApplicationService {
             meta: { applicationId: id }
           }
         });
+
+        // Enqueue Visa Applied communication
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'VISA_APPLIED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'VISA_APPLIED', {});
       } else if (dto.visaStatus === VisaStatus.VISA_APPROVED) {
         await this.prisma.activity.create({
           data: {
@@ -222,6 +242,12 @@ export class ApplicationService {
             meta: { applicationId: id, universityName: application.universityName }
           }
         });
+
+        // Enqueue Visa Approved & Enrollment Complete communications
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'VISA_APPROVED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'VISA_APPROVED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'ENROLLMENT_COMPLETE', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'ENROLLMENT_COMPLETE', {});
       }
     }
 

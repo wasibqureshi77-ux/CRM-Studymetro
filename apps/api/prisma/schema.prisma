@@ -121,6 +121,7 @@ model Tenant {
   auditLogs    AuditLog[]
   leads        Lead[]
   visitors     Visitor[]
+  emailSetting EmailSetting?
 }
 
 model Branch {
@@ -205,6 +206,12 @@ model Lead {
   activities     Activity[]
   notes          Note[]
   applications   Application[]
+  communicationQueues CommunicationQueue[]
+  communicationLogs   CommunicationLog[]
+  brochureAssignments BrochureAssignment[]
+  engagementScore     Int                 @default(0)
+  engagementLabel     String              @default("Cold")
+
 
   @@index([tenantId])
   @@index([branchId])
@@ -460,3 +467,113 @@ model Application {
 
   @@index([leadId])
 }
+
+enum CommunicationChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum QueueStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model CommunicationQueue {
+  id          String   @id @default(cuid())
+  leadId      String
+  channel     CommunicationChannel
+  eventType   String
+  payload     Json
+  status      QueueStatus @default(PENDING)
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model CommunicationTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  channel     CommunicationChannel
+  subject     String?
+  content     String
+  htmlContent String?
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model CommunicationLog {
+  id         String   @id @default(cuid())
+  leadId     String
+  channel    CommunicationChannel
+  eventType  String
+  status     QueueStatus
+  recipient  String
+  message    String
+  sentAt     DateTime @default(now())
+  openedAt   DateTime?
+  clickedAt  DateTime?
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model EmailSetting {
+  id          String   @id @default(cuid())
+  tenantId    String   @unique
+  host        String
+  port        Int
+  username    String
+  password    String
+  senderName  String
+  senderEmail String
+  encryption  String   @default("TLS")
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Brochure {
+  id          String               @id @default(uuid())
+  title       String
+  category    LeadCategory
+  filePath    String
+  totalPages  Int
+  isActive    Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  assignments BrochureAssignment[]
+}
+
+model BrochureAssignment {
+  id         String            @id @default(uuid())
+  leadId     String
+  lead       Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  brochureId String
+  brochure   Brochure          @relation(fields: [brochureId], references: [id], onDelete: Cascade)
+  token      String            @unique
+  assignedAt DateTime          @default(now())
+  assignedBy String?
+  tracking   BrochureTracking?
+}
+
+model BrochureTracking {
+  id                   String             @id @default(uuid())
+  brochureAssignmentId String             @unique
+  assignment           BrochureAssignment @relation(fields: [brochureAssignmentId], references: [id], onDelete: Cascade)
+  opened               Boolean            @default(false)
+  readingTime          Int                @default(0) // in seconds
+  pageViews            Int                @default(0)
+  completionPercentage Float              @default(0.0) // 0 to 100
+  lastPageViewed       Int                @default(0)
+  downloadCount        Int                @default(0)
+  viewedPages          String             @default("") // comma-separated unique page numbers (e.g. "1,2")
+  engagementScore      Int                @default(0)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
+

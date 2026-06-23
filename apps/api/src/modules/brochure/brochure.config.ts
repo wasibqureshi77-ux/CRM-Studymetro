@@ -1,0 +1,12 @@
+export const BROCHURE_SCORING = {
+  OPENED: 10,
+  VIEWED_50: 20,
+  VIEWED_80: 30,
+  COMPLETED: 50,
+  DOWNLOADED: 20,
+};
+
+export const LEAD_LABEL_THRESHOLDS = {
+  WARM: 30,
+  HOT: 70,
+};

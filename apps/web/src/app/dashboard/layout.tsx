@@ -91,6 +91,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <li className={`sidebar-item ${pathname?.startsWith('/dashboard/settings') ? 'active' : ''}`}>
             <a href="/dashboard/settings">⚙️ Settings</a>
           </li>
+          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/communication-templates') ? 'active' : ''}`}>
+            <a href="/dashboard/communication-templates">💬 Communication Templates</a>
+          </li>
+          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/communication-settings') ? 'active' : ''}`}>
+            <a href="/dashboard/communication-settings">⚙️ Communication Settings</a>
+          </li>
+          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/brochure-library') ? 'active' : ''}`}>
+            <a href="/dashboard/brochure-library">📚 Brochure Library</a>
+          </li>
+          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/reports-analytics') ? 'active' : ''}`}>
+            <a href="/dashboard/reports-analytics">📊 Reports & Analytics</a>
+          </li>
         </ul>
         <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
           <button onClick={logout} className="btn btn-danger btn-sm" style={{ width: '100%' }}>

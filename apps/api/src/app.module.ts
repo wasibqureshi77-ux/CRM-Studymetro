@@ -9,6 +9,9 @@ import { DocumentModule } from './modules/document/document.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { TrackerModule } from './modules/tracker/tracker.module';
 import { ApplicationModule } from './modules/application/application.module';
+import { CommunicationModule } from './modules/communication/communication.module';
+import { BrochureModule } from './modules/brochure/brochure.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -24,6 +27,9 @@ import { ApplicationModule } from './modules/application/application.module';
     NotificationModule,
     TrackerModule,
     ApplicationModule,
+    CommunicationModule,
+    BrochureModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule implements NestModule {

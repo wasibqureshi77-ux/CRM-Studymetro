@@ -3,15 +3,17 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { LocalStorageProvider } from '../../common/storage/local-storage.provider';
 import { DocumentTemplates } from './utils/document-templates.config';
-import { LeadCategory, DocumentStatus } from '@prisma/client';
+import { LeadCategory, DocumentStatus, CommunicationChannel } from '@prisma/client';
 import * as path from 'path';
+import { CommunicationService } from '../communication/communication.service';
 
 @Injectable()
 export class LeadDocumentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationService: NotificationService,
-    private readonly storageProvider: LocalStorageProvider
+    private readonly storageProvider: LocalStorageProvider,
+    private readonly communicationService: CommunicationService
   ) {}
 
   async generateChecklist(leadId: string, category: LeadCategory) {
@@ -38,6 +40,17 @@ export class LeadDocumentService {
     }
     // Calculate and update readiness score
     await this.calculateReadiness(leadId);
+
+    // Enqueue document request communication if any are pending
+    const pendingDocs = await this.prisma.leadDocument.findMany({
+      where: { leadId, status: DocumentStatus.PENDING, isCurrent: true }
+    });
+    if (pendingDocs.length > 0) {
+      const docTypeList = pendingDocs.map(d => d.documentType).join(', ');
+      await this.communicationService.enqueue(leadId, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+      await this.communicationService.enqueue(leadId, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+    }
+
     return createdDocs;
   }
 

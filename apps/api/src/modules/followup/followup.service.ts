@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateFollowupDto, UpdateFollowupStatusDto } from './dto/followup.dto';
-import { FollowupStatus } from '@prisma/client';
+import { FollowupStatus, CommunicationChannel } from '@prisma/client';
+import { CommunicationService } from '../communication/communication.service';
 
 @Injectable()
 export class FollowupService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly communicationService: CommunicationService
+  ) {}
 
   async create(dto: CreateFollowupDto, tenantId: string, actorId: string) {
     // 1. Verify Lead exists under Tenant
@@ -59,6 +63,11 @@ export class FollowupService {
         afterState: followup as any
       }
     });
+
+    // Enqueue followup reminder/scheduled communications
+    const dateStr = followup.followupDate.toLocaleString();
+    await this.communicationService.enqueue(dto.leadId, CommunicationChannel.EMAIL, 'FOLLOWUP_REMINDER', { followupDate: dateStr });
+    await this.communicationService.enqueue(dto.leadId, CommunicationChannel.WHATSAPP, 'FOLLOWUP_REMINDER', { followupDate: dateStr });
 
     return followup;
   }
