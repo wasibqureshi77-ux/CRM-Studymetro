@@ -8,6 +8,7 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Rejection modal state
   const [rejectionDocId, setRejectionDocId] = useState<string | null>(null);
@@ -26,6 +27,11 @@ export default function DocumentsPage() {
       setLoading(false);
     }
   };
+
+  const filteredDocuments = documents.filter((doc) => {
+    const leadName = doc.lead ? `${doc.lead.firstName} ${doc.lead.lastName || ''}`.toLowerCase() : '';
+    return leadName.includes(searchQuery.toLowerCase());
+  });
 
   useEffect(() => {
     fetchDocuments();
@@ -136,6 +142,48 @@ export default function DocumentsPage() {
         </p>
       </div>
 
+      {/* Search Input Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
+          <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>Search Student Document Registry</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              placeholder="Search by student name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#fff',
+                outline: 'none',
+                width: '280px',
+                height: '28px'
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  marginLeft: '-28px',
+                  marginRight: '14px',
+                  zIndex: 10
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {(errorMsg || successMsg) && (
         <div>
           {errorMsg && (
@@ -156,9 +204,9 @@ export default function DocumentsPage() {
           <div style={{ padding: '40px', textAlign: 'center', fontWeight: 600 }}>
             Querying documents database...
           </div>
-        ) : documents.length === 0 ? (
+        ) : filteredDocuments.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            No documents found in the database.
+            No documents found matching the search query.
           </div>
         ) : (
           <table className="dense-table">
@@ -177,7 +225,7 @@ export default function DocumentsPage() {
               </tr>
             </thead>
             <tbody>
-              {documents.map((doc) => (
+              {filteredDocuments.map((doc) => (
                 <tr key={doc.id}>
                   <td>
                     {doc.lead ? (

@@ -16,6 +16,10 @@ export class CreateFollowupDto {
 export class UpdateFollowupStatusDto {
   @IsEnum(FollowupStatus)
   status: FollowupStatus;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class RescheduleFollowupDto {

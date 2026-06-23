@@ -12,6 +12,7 @@ export default function ActivitiesPage() {
   const [leadFilter, setLeadFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchLeadsMetadata = async () => {
     try {
@@ -39,6 +40,11 @@ export default function ActivitiesPage() {
     }
   };
 
+  const filteredActivities = activities.filter((act) => {
+    const leadName = act.lead ? `${act.lead.firstName} ${act.lead.lastName || ''}`.toLowerCase() : '';
+    return leadName.includes(searchQuery.toLowerCase());
+  });
+
   useEffect(() => {
     fetchLeadsMetadata();
   }, []);
@@ -59,6 +65,45 @@ export default function ActivitiesPage() {
       {/* Filter Matrix */}
       <section style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', background: '#fff', padding: '12px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>Search Student Name</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              placeholder="Search by name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#fff',
+                outline: 'none',
+                width: '180px',
+                height: '28px'
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  marginLeft: '-28px',
+                  marginRight: '14px',
+                  zIndex: 10
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <label style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>Filter by Student</label>
           <select className="form-control" style={{ width: '180px' }} value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)}>
             <option value="">-- All Candidates --</option>
@@ -70,7 +115,13 @@ export default function ActivitiesPage() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <label style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>Filter by Date</label>
-          <input type="date" className="form-control" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
+          <input
+            type="date"
+            className="form-control"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            onClick={(e) => e.currentTarget.showPicker?.()}
+          />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -91,11 +142,11 @@ export default function ActivitiesPage() {
           </select>
         </div>
 
-        {(leadFilter || dateFilter || typeFilter) && (
+        {(leadFilter || dateFilter || typeFilter || searchQuery) && (
           <button
             className="btn btn-sm"
             style={{ alignSelf: 'flex-end', height: '28px' }}
-            onClick={() => { setLeadFilter(''); setDateFilter(''); setTypeFilter(''); }}
+            onClick={() => { setLeadFilter(''); setDateFilter(''); setTypeFilter(''); setSearchQuery(''); }}
           >
             Clear Filters
           </button>
@@ -108,7 +159,7 @@ export default function ActivitiesPage() {
           <div style={{ padding: '40px', textAlign: 'center', fontWeight: 600 }}>
             Querying activity logs ledger database...
           </div>
-        ) : activities.length === 0 ? (
+        ) : filteredActivities.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
             No activities recorded matching the selected filter parameters.
           </div>
@@ -124,7 +175,7 @@ export default function ActivitiesPage() {
               </tr>
             </thead>
             <tbody>
-              {activities.map((act) => (
+              {filteredActivities.map((act) => (
                 <tr key={act.id}>
                   <td>
                     {new Date(act.createdAt).toLocaleString()}

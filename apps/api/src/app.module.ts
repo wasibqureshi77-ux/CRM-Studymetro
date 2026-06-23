@@ -8,6 +8,7 @@ import { FollowupModule } from './modules/followup/followup.module';
 import { DocumentModule } from './modules/document/document.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { TrackerModule } from './modules/tracker/tracker.module';
+import { ApplicationModule } from './modules/application/application.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TrackerModule } from './modules/tracker/tracker.module';
     DocumentModule,
     NotificationModule,
     TrackerModule,
+    ApplicationModule,
   ],
 })
 export class AppModule implements NestModule {

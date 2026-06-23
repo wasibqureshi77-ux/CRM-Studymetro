@@ -291,24 +291,100 @@ export class TrackerService {
       });
     }
 
-    const country = dto.formFields.preferredCountry || dto.formFields.country || null;
-    const course = dto.formFields.leadCategory || dto.formFields.course || null;
-    const intake = dto.formFields.intendedIntake || dto.formFields.intake || null;
+    const preferredCountry = dto.formFields.preferredCountry || dto.formFields.country || null;
+    const preferredCourse = dto.formFields.preferredCourse || null;
+    const intendedIntake = dto.formFields.intendedIntake || dto.formFields.intake || null;
+    const planningTimeline = dto.formFields.planningTimeline || null;
+    const englishLevel = dto.formFields.englishLevel || null;
+    const targetScore = dto.formFields.targetScore ? String(dto.formFields.targetScore) : null;
+    const purpose = dto.formFields.purpose || null;
+    const courseInterest = dto.formFields.courseInterest || null;
+
+    const country = preferredCountry;
+    const course = preferredCourse || dto.formFields.course || null;
+    const intake = intendedIntake;
 
     const category = this.mapCategoryToEnum(dto.formFields.leadCategory);
 
     if (existingLead) {
+      // Check for changes and create timeline event activities
+      if (category === 'STUDY_ABROAD') {
+        const changes: string[] = [];
+        if (preferredCountry && preferredCountry !== existingLead.preferredCountry) {
+          changes.push(`Preferred Country changed: ${existingLead.preferredCountry || 'None'} → ${preferredCountry}`);
+        }
+        if (preferredCourse && preferredCourse !== existingLead.preferredCourse) {
+          changes.push(`Preferred Course changed: ${existingLead.preferredCourse || 'None'} → ${preferredCourse}`);
+        }
+        if (intendedIntake && intendedIntake !== existingLead.intendedIntake) {
+          changes.push(`Intended Intake changed: ${existingLead.intendedIntake || 'None'} → ${intendedIntake}`);
+        }
+        if (planningTimeline && planningTimeline !== existingLead.planningTimeline) {
+          changes.push(`Planning Timeline changed: ${existingLead.planningTimeline || 'None'} → ${planningTimeline}`);
+        }
+        if (changes.length > 0) {
+          await this.prisma.activity.create({
+            data: {
+              leadId: existingLead.id,
+              type: 'STUDY_ABROAD_INTEREST_UPDATED',
+              description: `Study Abroad Interest Updated:\n${changes.join('\n')}`
+            }
+          });
+        }
+      } else if (category === 'IELTS') {
+        if (targetScore && targetScore !== existingLead.targetScore) {
+          await this.prisma.activity.create({
+            data: {
+              leadId: existingLead.id,
+              type: 'IELTS_TARGET_SCORE_UPDATED',
+              description: `Target Score changed: ${existingLead.targetScore || 'None'} → ${targetScore}`
+            }
+          });
+        }
+      } else if (category === 'PTE') {
+        if (targetScore && targetScore !== existingLead.targetScore) {
+          await this.prisma.activity.create({
+            data: {
+              leadId: existingLead.id,
+              type: 'PTE_TARGET_SCORE_UPDATED',
+              description: `Target Score changed: ${existingLead.targetScore || 'None'} → ${targetScore}`
+            }
+          });
+        }
+      } else if (category === 'ENGLISH_SPEAKING') {
+        if (purpose && purpose !== existingLead.purpose) {
+          await this.prisma.activity.create({
+            data: {
+              leadId: existingLead.id,
+              type: 'ENGLISH_SPEAKING_PURPOSE_UPDATED',
+              description: `Purpose changed: ${existingLead.purpose || 'None'} → ${purpose}`
+            }
+          });
+        }
+      } else if (category === 'COMPUTER_COURSE') {
+        if (courseInterest && courseInterest !== existingLead.courseInterest) {
+          await this.prisma.activity.create({
+            data: {
+              leadId: existingLead.id,
+              type: 'COMPUTER_COURSE_INTEREST_UPDATED',
+              description: `Course Interest changed: ${existingLead.courseInterest || 'None'} → ${courseInterest}`
+            }
+          });
+        }
+      }
+
       // Prevent duplicates: link current visitor, and create match activity log
       const updateData: any = {
         submissionCount: { increment: 1 },
         leadCategory: category,
-        preferredCountry: dto.formFields.preferredCountry || country || undefined,
-        planningTimeline: dto.formFields.planningTimeline || undefined,
-        intendedIntake: dto.formFields.intendedIntake || intake || undefined,
-        englishLevel: dto.formFields.englishLevel || undefined,
-        targetScore: dto.formFields.targetScore || undefined,
-        purpose: dto.formFields.purpose || undefined,
-        courseInterest: dto.formFields.courseInterest || undefined
+        preferredCountry: preferredCountry || undefined,
+        preferredCourse: preferredCourse || undefined,
+        planningTimeline: planningTimeline || undefined,
+        intendedIntake: intendedIntake || undefined,
+        englishLevel: englishLevel || undefined,
+        targetScore: targetScore || undefined,
+        purpose: purpose || undefined,
+        courseInterest: courseInterest || undefined
       };
       if (!existingLead.visitorId) {
         updateData.visitorId = dto.visitorId;
@@ -352,7 +428,15 @@ export class TrackerService {
           utmContent: dto.utmContent || null,
           utmTerm: dto.utmTerm || null,
           referrer: dto.referrer || null,
-          landingPage: dto.url || null
+          landingPage: dto.url || null,
+          preferredCountry,
+          preferredCourse,
+          intendedIntake,
+          planningTimeline,
+          englishLevel,
+          targetScore,
+          purpose,
+          courseInterest
         }
       });
 
@@ -420,18 +504,19 @@ export class TrackerService {
         status: 'NEW_LEAD',
         submissionCount: 1,
         leadCategory: category,
-        preferredCountry: dto.formFields.preferredCountry || country || null,
-        planningTimeline: dto.formFields.planningTimeline || null,
-        intendedIntake: dto.formFields.intendedIntake || intake || null,
-        englishLevel: dto.formFields.englishLevel || null,
-        targetScore: dto.formFields.targetScore || null,
-        purpose: dto.formFields.purpose || null,
-        courseInterest: dto.formFields.courseInterest || null,
+        preferredCountry,
+        preferredCourse,
+        planningTimeline,
+        intendedIntake,
+        englishLevel,
+        targetScore,
+        purpose,
+        courseInterest,
         studentProfile: {
           create: {
-            targetCountry: dto.formFields.preferredCountry || country || null,
-            targetCourse: dto.formFields.leadCategory || course || null,
-            intake: dto.formFields.intendedIntake || intake || null
+            targetCountry: preferredCountry || country || null,
+            targetCourse: preferredCourse || course || null,
+            intake: intendedIntake || intake || null
           }
         },
         submissions: {
@@ -446,7 +531,15 @@ export class TrackerService {
             utmContent: dto.utmContent || null,
             utmTerm: dto.utmTerm || null,
             referrer: dto.referrer || null,
-            landingPage: dto.url || null
+            landingPage: dto.url || null,
+            preferredCountry,
+            preferredCourse,
+            intendedIntake,
+            planningTimeline,
+            englishLevel,
+            targetScore,
+            purpose,
+            courseInterest
           }
         }
       },

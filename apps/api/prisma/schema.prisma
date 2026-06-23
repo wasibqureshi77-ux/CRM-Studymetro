@@ -83,6 +83,30 @@ enum FollowupStatus {
   CANCELLED
 }
 
+enum ApplicationStatus {
+  SHORTLISTED
+  APPLICATION_STARTED
+  APPLICATION_SUBMITTED
+  UNDER_REVIEW
+  DECISION_RECEIVED
+}
+
+enum OfferStatus {
+  NONE
+  CONDITIONAL_OFFER
+  UNCONDITIONAL_OFFER
+  OFFER_ACCEPTED
+  OFFER_REJECTED
+}
+
+enum VisaStatus {
+  NOT_STARTED
+  VISA_APPLIED
+  VISA_BIOMETRICS
+  VISA_APPROVED
+  VISA_REJECTED
+}
+
 model Tenant {
   id           String     @id @default(uuid())
   name         String
@@ -165,6 +189,7 @@ model Lead {
   submissionCount Int            @default(1)
   leadCategory   LeadCategory @default(STUDY_ABROAD)
   preferredCountry String?
+  preferredCourse  String?
   planningTimeline String?
   intendedIntake   String?
   englishLevel     String?
@@ -179,6 +204,7 @@ model Lead {
   followups      Followup[]
   activities     Activity[]
   notes          Note[]
+  applications   Application[]
 
   @@index([tenantId])
   @@index([branchId])
@@ -254,7 +280,7 @@ model LeadDocument {
 model Followup {
   id             String         @id @default(uuid())
   leadId         String
-  lead           Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead             Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
   assignedUserId String
   assignedUser   User           @relation(fields: [assignedUserId], references: [id], onDelete: Cascade)
   followupDate   DateTime
@@ -399,6 +425,38 @@ model LeadSubmission {
   referrer    String?
   landingPage String?
   createdAt   DateTime @default(now())
+
+  preferredCountry String?
+  preferredCourse  String?
+  intendedIntake   String?
+  planningTimeline String?
+  englishLevel     String?
+  targetScore      String?
+  purpose          String?
+  courseInterest   String?
+
+  @@index([leadId])
+}
+
+model Application {
+  id                String            @id @default(uuid())
+  leadId            String
+  lead              Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  universityName    String
+  country           String
+  courseName        String
+  intake            String
+  applicationStatus ApplicationStatus @default(SHORTLISTED)
+  offerStatus       OfferStatus       @default(NONE)
+  visaStatus        VisaStatus        @default(NOT_STARTED)
+  applicationDate   DateTime?
+  offerDate         DateTime?
+  visaDate          DateTime?
+  tuitionFee        Float?
+  scholarshipAmount Float?
+  notes             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   @@index([leadId])
 }

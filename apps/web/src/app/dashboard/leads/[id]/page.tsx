@@ -5,10 +5,52 @@ import { useParams, useRouter } from 'next/navigation';
 import { api } from '../../../../lib/api';
 import { useAuth } from '../../../../context/auth-context';
 
+const parseLocalISOString = (s: string) => {
+  if (!s) return new Date();
+  const [datePart, timePart] = s.split('T');
+  if (!datePart || !timePart) return new Date(s);
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hours, minutes] = timePart.split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes);
+};
+
+const validateFollowupDateTime = (dateTimeStr: string): { isValid: boolean; errorMsg: string } => {
+  if (!dateTimeStr) {
+    return { isValid: false, errorMsg: 'Please select a date and time.' };
+  }
+  const selectedDate = parseLocalISOString(dateTimeStr);
+  const now = new Date();
+  
+  const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+  const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  if (selectedDateOnly < todayDateOnly) {
+    return { isValid: false, errorMsg: 'Follow-up date cannot be in the past.' };
+  }
+  
+  if (selectedDateOnly.getTime() === todayDateOnly.getTime()) {
+    if (selectedDate.getTime() <= now.getTime()) {
+      return { isValid: false, errorMsg: 'Follow-up time must be later than the current time.' };
+    }
+  }
+  
+  return { isValid: true, errorMsg: '' };
+};
+
 export default function LeadDetailPage() {
   const { id } = useParams();
   const { hasPermission } = useAuth();
   const router = useRouter();
+
+  const minDateTime = (() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  })();
 
   const [lead, setLead] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
@@ -17,7 +59,7 @@ export default function LeadDetailPage() {
   const [loading, setLoading] = useState(true);
 
   // Form states
-  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups' | 'applications'>('timeline');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -40,6 +82,25 @@ export default function LeadDetailPage() {
   const [historyDocType, setHistoryDocType] = useState<string | null>(null);
   const [historyList, setHistoryList] = useState<any[]>([]);
 
+  // University Application States
+  const [applications, setApplications] = useState<any[]>([]);
+  const [showAddUniModal, setShowAddUniModal] = useState(false);
+  const [newUniName, setNewUniName] = useState('');
+  const [newUniCountry, setNewUniCountry] = useState('');
+  const [newUniCourse, setNewUniCourse] = useState('');
+  const [newUniIntake, setNewUniIntake] = useState('');
+  const [newUniNotes, setNewUniNotes] = useState('');
+  const [isSubmittingUni, setIsSubmittingUni] = useState(false);
+
+  // Update University States
+  const [showUpdateUniModal, setShowUpdateUniModal] = useState(false);
+  const [updateUniId, setUpdateUniId] = useState('');
+  const [updateUniName, setUpdateUniName] = useState('');
+  const [updateUniTuitionFee, setUpdateUniTuitionFee] = useState('');
+  const [updateUniScholarship, setUpdateUniScholarship] = useState('');
+  const [updateUniNotes, setUpdateUniNotes] = useState('');
+  const [isSubmittingUpdateUni, setIsSubmittingUpdateUni] = useState(false);
+
   const addToast = (type: 'success' | 'error', message: string) => {
     const id = Math.random().toString(36).substr(2, 9);
     setToasts((prev) => [...prev, { id, type, message }]);
@@ -54,16 +115,18 @@ export default function LeadDetailPage() {
 
   const loadAllData = async () => {
     try {
-      const [leadData, timelineData, usersData, branchesData] = await Promise.all([
+      const [leadData, timelineData, usersData, branchesData, appsData] = await Promise.all([
         api.get(`/api/v1/leads/${id}`),
         api.get(`/api/v1/leads/${id}/timeline`),
         api.get('/api/v1/leads/meta/users'),
         api.get('/api/v1/leads/meta/branches'),
+        api.get(`/api/v1/applications/lead/${id}`).catch(() => []),
       ]);
       setLead(leadData);
       setTimeline(timelineData || []);
       setUsers(usersData || []);
       setBranches(branchesData || []);
+      setApplications(appsData || []);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to load details.');
     } finally {
@@ -77,10 +140,39 @@ export default function LeadDetailPage() {
     }
   }, [id]);
 
+  const handleDocumentsTabClick = async () => {
+    setActiveTab('documents');
+    try {
+      const res = await api.get(`/api/v1/documents/lead/${id}`);
+      setLead((prev: any) => {
+        if (!prev) return prev;
+        return { ...prev, documents: res };
+      });
+    } catch (err) {
+      console.error('Failed to load/generate checklist', err);
+    }
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    const RESTRICTED_STAGES = [
+      'DOCUMENTS_RECEIVED',
+      'UNIVERSITY_APPLIED',
+      'OFFER_LETTER',
+      'VISA_PROCESS',
+      'ADMISSION_CLOSED'
+    ];
+    if (RESTRICTED_STAGES.includes(lead.status)) {
+      const score = lead.readinessScore ?? 0;
+      if (score < 100) {
+        setErrorMsg(`Cannot change outreach stage to ${lead.status.replace(/_/g, ' ')} until all required documents are 100% verified.`);
+        return;
+      }
+    }
+
     try {
       const updated = await api.patch(`/api/v1/leads/${id}`, {
         firstName: lead.firstName,
@@ -91,6 +183,7 @@ export default function LeadDetailPage() {
         source: lead.source,
         leadCategory: lead.leadCategory,
         preferredCountry: lead.preferredCountry,
+        preferredCourse: lead.preferredCourse,
         planningTimeline: lead.planningTimeline,
         intendedIntake: lead.intendedIntake,
         englishLevel: lead.englishLevel,
@@ -99,7 +192,7 @@ export default function LeadDetailPage() {
         courseInterest: lead.courseInterest,
         studentProfile: {
           targetCountry: lead.preferredCountry || lead.studentProfile?.targetCountry || undefined,
-          targetCourse: lead.courseInterest || lead.studentProfile?.targetCourse || undefined,
+          targetCourse: lead.preferredCourse || lead.studentProfile?.targetCourse || undefined,
           intake: lead.intendedIntake || lead.studentProfile?.intake || undefined,
           ieltsStatus: lead.studentProfile?.ieltsStatus || 'NOT_TAKEN',
           passportStatus: lead.studentProfile?.passportStatus || 'NO_PASSPORT',
@@ -168,11 +261,18 @@ export default function LeadDetailPage() {
       setErrorMsg('Please select a date/time.');
       return;
     }
+
+    const validation = validateFollowupDateTime(followupDate);
+    if (!validation.isValid) {
+      setErrorMsg(validation.errorMsg);
+      return;
+    }
+
     setErrorMsg(null);
     try {
       await api.post('/api/v1/followups', {
         leadId: id,
-        followupDate: new Date(followupDate).toISOString(),
+        followupDate: parseLocalISOString(followupDate).toISOString(),
         notes: followupNotes,
       });
       setFollowupDate('');
@@ -181,6 +281,69 @@ export default function LeadDetailPage() {
       loadAllData();
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to schedule followup.');
+    }
+  };
+
+  const handleAddUniversity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUniName || !newUniCountry || !newUniCourse || !newUniIntake) {
+      addToast('error', 'Please fill in all required fields.');
+      return;
+    }
+    setIsSubmittingUni(true);
+    try {
+      await api.post('/api/v1/applications', {
+        leadId: id,
+        universityName: newUniName,
+        country: newUniCountry,
+        courseName: newUniCourse,
+        intake: newUniIntake,
+        notes: newUniNotes,
+      });
+      addToast('success', 'University application shortlisted successfully.');
+      setShowAddUniModal(false);
+      setNewUniName('');
+      setNewUniCountry('');
+      setNewUniCourse('');
+      setNewUniIntake('');
+      setNewUniNotes('');
+      await loadAllData();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to shortlist university.');
+    } finally {
+      setIsSubmittingUni(false);
+    }
+  };
+
+  const handleUpdateUniversityDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingUpdateUni(true);
+    try {
+      const tuitionFeeNum = updateUniTuitionFee ? parseFloat(updateUniTuitionFee) : null;
+      const scholarshipNum = updateUniScholarship ? parseFloat(updateUniScholarship) : null;
+      
+      await api.patch(`/api/v1/applications/${updateUniId}`, {
+        tuitionFee: tuitionFeeNum,
+        scholarshipAmount: scholarshipNum,
+        notes: updateUniNotes || null
+      });
+      addToast('success', 'Application details updated successfully.');
+      setShowUpdateUniModal(false);
+      await loadAllData();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to update application details.');
+    } finally {
+      setIsSubmittingUpdateUni(false);
+    }
+  };
+
+  const handleUpdateApplicationStatus = async (appId: string, updates: any) => {
+    try {
+      await api.patch(`/api/v1/applications/${appId}`, updates);
+      addToast('success', 'Application updated successfully.');
+      await loadAllData();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to update application.');
     }
   };
 
@@ -485,10 +648,14 @@ export default function LeadDetailPage() {
   };
 
   const getProgressPercentage = (status: string, category: string): number => {
+    let activeStatus = status;
+    if (status === 'ENROLLED' && (!category || category === 'STUDY_ABROAD')) {
+      activeStatus = 'ADMISSION_CLOSED';
+    }
     const stages = getPipelineStages(category || 'STUDY_ABROAD');
-    if (status === 'LOST') return 0;
+    if (activeStatus === 'LOST') return 0;
     const nonLostStages = stages.filter(s => s !== 'LOST');
-    const nonLostIndex = nonLostStages.indexOf(status);
+    const nonLostIndex = nonLostStages.indexOf(activeStatus);
     if (nonLostIndex === -1) return 0;
     if (nonLostStages.length <= 1) return 100;
     return Math.round((nonLostIndex / (nonLostStages.length - 1)) * 100);
@@ -519,6 +686,28 @@ export default function LeadDetailPage() {
   const activeChecklist = lead.documents?.filter((d: any) => d.isCurrent) || [];
   const requiredCount = activeChecklist.filter((d: any) => d.isRequired).length;
   const verifiedRequiredCount = activeChecklist.filter((d: any) => d.isRequired && d.status === 'VERIFIED').length;
+
+  const visaStatusLabel = (() => {
+    if (!applications || applications.length === 0) return '—';
+    const visaOrder = ['VISA_APPROVED', 'VISA_REJECTED', 'VISA_BIOMETRICS', 'VISA_APPLIED', 'NOT_STARTED'];
+    for (const status of visaOrder) {
+      if (applications.some(a => a.visaStatus === status)) {
+        return status.replace(/_/g, ' ');
+      }
+    }
+    return '—';
+  })();
+
+  const finalUniversityLabel = (() => {
+    if (!applications || applications.length === 0) return '—';
+    const approved = applications.find(a => a.visaStatus === 'VISA_APPROVED');
+    if (approved) return approved.universityName;
+    const accepted = applications.find(a => a.offerStatus === 'OFFER_ACCEPTED');
+    if (accepted) return accepted.universityName;
+    return '—';
+  })();
+
+  const offersCount = applications ? applications.filter(a => a.offerStatus !== 'NONE').length : 0;
 
   return (
     <div className="split-container">
@@ -580,13 +769,57 @@ export default function LeadDetailPage() {
         </div>
 
         {/* Action responses */}
+        {/* Dynamic Information Card */}
+        <div style={{ margin: '12px 0', padding: '16px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: '#fff', borderRadius: '6px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8', fontWeight: 700, marginBottom: '8px' }}>
+            🎯 Category-Specific Intel
+          </div>
+          {lead.leadCategory === 'STUDY_ABROAD' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
+              <div><span style={{ color: '#94a3b8' }}>Preferred Country:</span> <strong style={{ color: '#38bdf8' }}>{lead.preferredCountry || '—'}</strong></div>
+              <div><span style={{ color: '#94a3b8' }}>Preferred Course:</span> <strong style={{ color: '#38bdf8' }}>{lead.preferredCourse || '—'}</strong></div>
+              <div><span style={{ color: '#94a3b8' }}>Intake:</span> <strong style={{ color: '#38bdf8' }}>{lead.intendedIntake || '—'}</strong></div>
+              <div><span style={{ color: '#94a3b8' }}>Applications Count:</span> <strong style={{ color: '#38bdf8' }}>{applications.length}</strong></div>
+              <div><span style={{ color: '#94a3b8' }}>Offers Count:</span> <strong style={{ color: '#38bdf8' }}>{offersCount}</strong></div>
+              <div><span style={{ color: '#94a3b8' }}>Visa Status:</span> <strong style={{ color: '#38bdf8' }}>{visaStatusLabel}</strong></div>
+              <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#94a3b8' }}>Final University:</span> <strong style={{ color: '#38bdf8' }}>{finalUniversityLabel}</strong></div>
+            </div>
+          )}
+          {(lead.leadCategory === 'IELTS' || lead.leadCategory === 'PTE') && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
+              <div><span style={{ color: '#94a3b8' }}>Current English Level:</span> <strong style={{ color: '#38bdf8' }}>{lead.englishLevel || '—'}</strong></div>
+              <div><span style={{ color: '#94a3b8' }}>Target Score:</span> <strong style={{ color: '#38bdf8' }}>{lead.targetScore || '—'}</strong></div>
+            </div>
+          )}
+          {lead.leadCategory === 'ENGLISH_SPEAKING' && (
+            <div style={{ fontSize: '12px' }}>
+              <span style={{ color: '#94a3b8' }}>Purpose:</span> <strong style={{ color: '#38bdf8' }}>{lead.purpose || '—'}</strong>
+            </div>
+          )}
+          {lead.leadCategory === 'COMPUTER_COURSE' && (
+            <div style={{ fontSize: '12px' }}>
+              <span style={{ color: '#94a3b8' }}>Course Interested In:</span> <strong style={{ color: '#38bdf8' }}>{lead.courseInterest || '—'}</strong>
+            </div>
+          )}
+          {lead.leadCategory === 'DIGITAL_MARKETING' && (
+            <div style={{ fontSize: '12px' }}>
+              <span style={{ color: '#94a3b8' }}>Category:</span> <strong style={{ color: '#38bdf8' }}>Digital Marketing</strong>
+            </div>
+          )}
+          {lead.leadCategory === 'OTHER' && (
+            <div style={{ fontSize: '12px' }}>
+              <span style={{ color: '#94a3b8' }}>Category:</span> <strong style={{ color: '#38bdf8' }}>Other / General</strong>
+            </div>
+          )}
+        </div>
+
         {errorMsg && (
-          <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '8px 12px', borderRadius: '4px', fontSize: '11px' }}>
+          <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '8px 12px', borderRadius: '4px', fontSize: '11px', marginBottom: '8px' }}>
             ⚠️ {errorMsg}
           </div>
         )}
         {successMsg && (
-          <div style={{ backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '8px 12px', borderRadius: '4px', fontSize: '11px' }}>
+          <div style={{ backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '8px 12px', borderRadius: '4px', fontSize: '11px', marginBottom: '8px' }}>
             ✓ {successMsg}
           </div>
         )}
@@ -641,7 +874,7 @@ export default function LeadDetailPage() {
           <div style={{ display: 'flex', gap: '8px' }}>
             <div className="form-group" style={{ flex: 1 }}>
               <label>Outreach Stage</label>
-              <select className="form-control" value={lead.status} onChange={(e) => setLead({ ...lead, status: e.target.value })}>
+              <select className="form-control" value={lead.status === 'ENROLLED' && lead.leadCategory === 'STUDY_ABROAD' ? 'ADMISSION_CLOSED' : lead.status} onChange={(e) => setLead({ ...lead, status: e.target.value })}>
                 {getPipelineStages(lead.leadCategory || 'STUDY_ABROAD').map((st) => (
                   <option key={st} value={st}>
                     {st === 'NEW_LEAD' && 'New Lead'}
@@ -764,11 +997,11 @@ export default function LeadDetailPage() {
                   <input
                     type="text"
                     className="form-control"
-                    value={lead.courseInterest || lead.studentProfile?.targetCourse || ''}
+                    value={lead.preferredCourse || lead.studentProfile?.targetCourse || ''}
                     onChange={(e) =>
                       setLead({
                         ...lead,
-                        courseInterest: e.target.value,
+                        preferredCourse: e.target.value,
                         studentProfile: { ...lead.studentProfile, targetCourse: e.target.value },
                       })
                     }
@@ -910,21 +1143,42 @@ export default function LeadDetailPage() {
                     </button>
                     {isOpen && (
                       <div style={{ padding: '12px', background: '#f8fafc', fontSize: '11px', borderTop: '1px solid var(--border-color)', color: '#334155', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <div><strong>Submitted At:</strong> {new Date(sub.createdAt).toLocaleString()}</div>
-                        <div><strong>Source:</strong> {sub.source || '—'}</div>
-                        <div><strong>Target Country:</strong> {sub.country || '—'}</div>
-                        <div><strong>Target Course:</strong> {sub.course || '—'}</div>
-                        <div><strong>Intake Period:</strong> {sub.intake || '—'}</div>
+                        <div><strong>Submission Date:</strong> {new Date(sub.createdAt).toLocaleString()}</div>
+                        <div><strong>Category:</strong> {lead.leadCategory ? lead.leadCategory.replace(/_/g, ' ') : '—'}</div>
+                        
+                        <div style={{ margin: '6px 0', padding: '8px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
+                          <div style={{ fontWeight: 700, marginBottom: '4px', color: 'var(--primary-color)' }}>Category Specific Data:</div>
+                          {lead.leadCategory === 'STUDY_ABROAD' && (
+                            <>
+                              <div>Preferred Country: {sub.preferredCountry || '—'}</div>
+                              <div>Preferred Course: {sub.preferredCourse || '—'}</div>
+                              <div>Intended Intake: {sub.intendedIntake || '—'}</div>
+                              <div>Planning Timeline: {sub.planningTimeline || '—'}</div>
+                            </>
+                          )}
+                          {(lead.leadCategory === 'IELTS' || lead.leadCategory === 'PTE') && (
+                            <>
+                              <div>English Level: {sub.englishLevel || '—'}</div>
+                              <div>Target Score: {sub.targetScore || '—'}</div>
+                            </>
+                          )}
+                          {lead.leadCategory === 'ENGLISH_SPEAKING' && (
+                            <div>Purpose: {sub.purpose || '—'}</div>
+                          )}
+                          {lead.leadCategory === 'COMPUTER_COURSE' && (
+                            <div>Course Interested In: {sub.courseInterest || '—'}</div>
+                          )}
+                          {lead.leadCategory === 'DIGITAL_MARKETING' && (
+                            <div>Digital Marketing</div>
+                          )}
+                          {lead.leadCategory === 'OTHER' && (
+                            <div>Other</div>
+                          )}
+                        </div>
+
+                        <div><strong>UTM Source:</strong> {sub.utmSource || '—'}</div>
                         <div><strong>Landing Page:</strong> {sub.landingPage ? <a href={sub.landingPage} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>{sub.landingPage}</a> : '—'}</div>
                         <div><strong>Referrer:</strong> {sub.referrer || '—'}</div>
-                        { (sub.utmSource || sub.utmMedium || sub.utmCampaign) && (
-                          <div style={{ marginTop: '4px', padding: '6px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
-                            <div style={{ fontWeight: 600, marginBottom: '2px' }}>UTM Attribution:</div>
-                            <div>Source: {sub.utmSource || '—'} | Medium: {sub.utmMedium || '—'} | Campaign: {sub.utmCampaign || '—'}</div>
-                            {sub.utmContent && <div>Content: {sub.utmContent}</div>}
-                            {sub.utmTerm && <div>Term: {sub.utmTerm}</div>}
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -952,7 +1206,7 @@ export default function LeadDetailPage() {
           </button>
           <button
             className={`tab-btn ${activeTab === 'documents' ? 'active' : ''}`}
-            onClick={() => setActiveTab('documents')}
+            onClick={handleDocumentsTabClick}
           >
             📁 Documents checklist
           </button>
@@ -962,6 +1216,14 @@ export default function LeadDetailPage() {
           >
             📆 Schedule Followup
           </button>
+          {lead && lead.leadCategory === 'STUDY_ABROAD' && (
+            <button
+              className={`tab-btn ${activeTab === 'applications' ? 'active' : ''}`}
+              onClick={() => setActiveTab('applications')}
+            >
+              🎓 University Applications ({applications.length})
+            </button>
+          )}
         </div>
 
         <div className="tab-content">
@@ -1088,6 +1350,7 @@ export default function LeadDetailPage() {
                       className="form-control"
                       value={expiryDateInput}
                       onChange={(e) => setExpiryDateInput(e.target.value)}
+                      onClick={(e) => e.currentTarget.showPicker?.()}
                     />
                   </div>
 
@@ -1122,9 +1385,26 @@ export default function LeadDetailPage() {
 
               {/* Active Documents List */}
               {activeChecklist.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '12px' }}>
-                  No checklist generated yet.
-                </p>
+                <div style={{ padding: '24px', textAlign: 'center', border: '2px dashed var(--border-color)', borderRadius: '6px', background: '#f8fafc' }}>
+                  <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '12px', marginBottom: '12px' }}>
+                    No checklist generated yet for this student.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await api.get(`/api/v1/documents/lead/${id}`);
+                        setLead((prev: any) => ({ ...prev, documents: res }));
+                        addToast('success', 'Documents checklist generated successfully.');
+                      } catch (err: any) {
+                        addToast('error', err.message || 'Failed to generate checklist.');
+                      }
+                    }}
+                    className="btn btn-primary"
+                  >
+                    ⚙️ Generate Document Checklist
+                  </button>
+                </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
                   <table className="dense-table" style={{ width: '100%' }}>
@@ -1235,7 +1515,9 @@ export default function LeadDetailPage() {
                   className="form-control"
                   value={followupDate}
                   onChange={(e) => setFollowupDate(e.target.value)}
+                  onClick={(e) => e.currentTarget.showPicker?.()}
                   required
+                  min={minDateTime}
                 />
               </div>
 
@@ -1254,6 +1536,217 @@ export default function LeadDetailPage() {
                 📆 Book Calendar Entry
               </button>
             </form>
+          )}
+
+          {/* Tab 5: University Applications */}
+          {activeTab === 'applications' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>Shortlisted Universities & Applications</h3>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={() => setShowAddUniModal(true)}
+                >
+                  ➕ Shortlist University
+                </button>
+              </div>
+
+              {applications.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>
+                  No universities shortlisted yet. Click "Shortlist University" to begin.
+                </p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
+                  {applications.map((app) => {
+                    const appStatuses = ['SHORTLISTED', 'APPLICATION_STARTED', 'APPLICATION_SUBMITTED', 'UNDER_REVIEW', 'DECISION_RECEIVED'];
+                    const currentAppIdx = appStatuses.indexOf(app.applicationStatus);
+                    const nextAppStatus = currentAppIdx < appStatuses.length - 1 ? appStatuses[currentAppIdx + 1] : null;
+
+                    const offerStatuses = ['NONE', 'CONDITIONAL_OFFER', 'UNCONDITIONAL_OFFER', 'OFFER_ACCEPTED', 'OFFER_REJECTED'];
+                    const visaStatuses = ['NOT_STARTED', 'VISA_APPLIED', 'VISA_BIOMETRICS', 'VISA_APPROVED', 'VISA_REJECTED'];
+
+                    return (
+                      <div key={app.id} style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '16px', backgroundColor: '#fff', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-color)' }}>{app.universityName}</h4>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>📍 {app.country} | 📚 {app.courseName} | 📅 Intake: {app.intake}</span>
+                          </div>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Added on {new Date(app.createdAt).toLocaleDateString()}</span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px', background: '#f8fafc', padding: '12px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                          <div>
+                            <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>Application Status</div>
+                            <span className="badge" style={{ backgroundColor: '#e0f2fe', color: '#0369a1' }}>{app.applicationStatus.replace(/_/g, ' ')}</span>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>Offer Status</div>
+                            <span className="badge" style={{ backgroundColor: '#fef3c7', color: '#d97706' }}>{app.offerStatus.replace(/_/g, ' ')}</span>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>Visa Status</div>
+                            <span className="badge" style={{ backgroundColor: '#dcfce7', color: '#15803d' }}>{app.visaStatus.replace(/_/g, ' ')}</span>
+                          </div>
+                          {(app.tuitionFee !== null || app.scholarshipAmount !== null) && (
+                            <div style={{ gridColumn: 'span 3', display: 'flex', gap: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '4px' }}>
+                              {app.tuitionFee !== null && <span style={{ fontSize: '11px' }}>💵 Tuition Fee: <strong>${app.tuitionFee}</strong></span>}
+                              {app.scholarshipAmount !== null && <span style={{ fontSize: '11px' }}>🎁 Scholarship: <strong>${app.scholarshipAmount}</strong></span>}
+                            </div>
+                          )}
+                        </div>
+
+                        {app.notes && (
+                          <div style={{ fontSize: '11px', color: '#475569', fontStyle: 'italic', borderLeft: '2px solid var(--border-color)', paddingLeft: '8px' }}>
+                            "{app.notes}"
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                          {nextAppStatus && (
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-primary"
+                              onClick={() => handleUpdateApplicationStatus(app.id, { applicationStatus: nextAppStatus })}
+                            >
+                              ➡️ Mark {nextAppStatus.replace(/_/g, ' ')}
+                            </button>
+                          )}
+
+                          {app.applicationStatus === 'DECISION_RECEIVED' && app.offerStatus === 'NONE' && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-xs"
+                                style={{ backgroundColor: '#f59e0b', color: '#fff' }}
+                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'CONDITIONAL_OFFER' })}
+                              >
+                                📜 Cond. Offer
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-xs"
+                                style={{ backgroundColor: '#d97706', color: '#fff' }}
+                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'UNCONDITIONAL_OFFER' })}
+                              >
+                                📜 Uncond. Offer
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-danger"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
+                              >
+                                ❌ Reject Offer
+                              </button>
+                            </>
+                          )}
+
+                          {app.offerStatus === 'CONDITIONAL_OFFER' && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-xs"
+                                style={{ backgroundColor: '#d97706', color: '#fff' }}
+                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'UNCONDITIONAL_OFFER' })}
+                              >
+                                📜 Uncond. Offer
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-success"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_ACCEPTED' })}
+                              >
+                                ✓ Accept Offer
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-danger"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
+                              >
+                                ❌ Reject Offer
+                              </button>
+                            </>
+                          )}
+
+                          {app.offerStatus === 'UNCONDITIONAL_OFFER' && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-success"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_ACCEPTED' })}
+                              >
+                                ✓ Accept Offer
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-danger"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
+                              >
+                                ❌ Reject Offer
+                              </button>
+                            </>
+                          )}
+
+                          {app.offerStatus === 'OFFER_ACCEPTED' && app.visaStatus === 'NOT_STARTED' && (
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-primary"
+                              onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_APPLIED' })}
+                            >
+                              ✈️ Apply Visa
+                            </button>
+                          )}
+                          {app.visaStatus === 'VISA_APPLIED' && (
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-primary"
+                              onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_BIOMETRICS' })}
+                            >
+                              🧬 Book Biometrics
+                            </button>
+                          )}
+                          {app.visaStatus === 'VISA_BIOMETRICS' && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-success"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_APPROVED' })}
+                              >
+                                ✓ Visa Approved
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-danger"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_REJECTED' })}
+                              >
+                                ❌ Visa Rejected
+                              </button>
+                            </>
+                          )}
+
+                          <button
+                            type="button"
+                            className="btn btn-xs"
+                            style={{ backgroundColor: '#475569', color: '#fff', marginLeft: 'auto' }}
+                            onClick={() => {
+                              setUpdateUniId(app.id);
+                              setUpdateUniName(app.universityName);
+                              setUpdateUniTuitionFee(app.tuitionFee !== null ? String(app.tuitionFee) : '');
+                              setUpdateUniScholarship(app.scholarshipAmount !== null ? String(app.scholarshipAmount) : '');
+                              setUpdateUniNotes(app.notes || '');
+                              setShowUpdateUniModal(true);
+                            }}
+                          >
+                            ✏️ Edit Details
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </section>
@@ -1319,6 +1812,132 @@ export default function LeadDetailPage() {
               <button className="btn btn-danger" onClick={handleRejectDocument}>Reject Document</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Add University Modal */}
+      {showAddUniModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <form onSubmit={handleAddUniversity} className="login-card" style={{ width: '400px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 700, borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', margin: 0 }}>Shortlist University</h3>
+            
+            <div className="form-group">
+              <label>University Name *</label>
+              <input
+                type="text"
+                className="form-control"
+                required
+                value={newUniName}
+                onChange={(e) => setNewUniName(e.target.value)}
+                placeholder="e.g. University of Toronto"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Country *</label>
+              <input
+                type="text"
+                className="form-control"
+                required
+                value={newUniCountry}
+                onChange={(e) => setNewUniCountry(e.target.value)}
+                placeholder="e.g. Canada"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Course *</label>
+              <input
+                type="text"
+                className="form-control"
+                required
+                value={newUniCourse}
+                onChange={(e) => setNewUniCourse(e.target.value)}
+                placeholder="e.g. M.S. in Computer Science"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Intake *</label>
+              <input
+                type="text"
+                className="form-control"
+                required
+                value={newUniIntake}
+                onChange={(e) => setNewUniIntake(e.target.value)}
+                placeholder="e.g. Fall 2026"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Notes / Remarks</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                value={newUniNotes}
+                onChange={(e) => setNewUniNotes(e.target.value)}
+                placeholder="Any special counselor notes..."
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '6px' }}>
+              <button type="button" className="btn" disabled={isSubmittingUni} onClick={() => setShowAddUniModal(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={isSubmittingUni}>
+                {isSubmittingUni ? 'Saving...' : 'Save University'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Update University Modal */}
+      {showUpdateUniModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <form onSubmit={handleUpdateUniversityDetails} className="login-card" style={{ width: '400px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 700, borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', margin: 0 }}>Update Details: {updateUniName}</h3>
+            
+            <div className="form-group">
+              <label>Tuition Fee ($)</label>
+              <input
+                type="number"
+                step="any"
+                className="form-control"
+                value={updateUniTuitionFee}
+                onChange={(e) => setUpdateUniTuitionFee(e.target.value)}
+                placeholder="e.g. 15000"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Scholarship Amount ($)</label>
+              <input
+                type="number"
+                step="any"
+                className="form-control"
+                value={updateUniScholarship}
+                onChange={(e) => setUpdateUniScholarship(e.target.value)}
+                placeholder="e.g. 2000"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Notes / Remarks</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                value={updateUniNotes}
+                onChange={(e) => setUpdateUniNotes(e.target.value)}
+                placeholder="Update counselor notes..."
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '6px' }}>
+              <button type="button" className="btn" disabled={isSubmittingUpdateUni} onClick={() => setShowUpdateUniModal(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={isSubmittingUpdateUni}>
+                {isSubmittingUpdateUni ? 'Updating...' : 'Update Details'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

@@ -4,14 +4,59 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/auth-context';
 
+const parseLocalISOString = (s: string) => {
+  if (!s) return new Date();
+  const [datePart, timePart] = s.split('T');
+  if (!datePart || !timePart) return new Date(s);
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hours, minutes] = timePart.split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes);
+};
+
+const validateFollowupDateTime = (dateTimeStr: string): { isValid: boolean; errorMsg: string } => {
+  if (!dateTimeStr) {
+    return { isValid: false, errorMsg: 'Please select a date and time.' };
+  }
+  const selectedDate = parseLocalISOString(dateTimeStr);
+  const now = new Date();
+  
+  const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+  const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  if (selectedDateOnly < todayDateOnly) {
+    return { isValid: false, errorMsg: 'Follow-up date cannot be in the past.' };
+  }
+  
+  if (selectedDateOnly.getTime() === todayDateOnly.getTime()) {
+    if (selectedDate.getTime() <= now.getTime()) {
+      return { isValid: false, errorMsg: 'Follow-up time must be later than the current time.' };
+    }
+  }
+  
+  return { isValid: true, errorMsg: '' };
+};
+
 export default function DashboardPage() {
   const { user } = useAuth();
+
+  const minDateTime = (() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  })();
+
   const [leads, setLeads] = useState<any[]>([]);
   const [followups, setFollowups] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [expiringDocs, setExpiringDocs] = useState<any[]>([]);
   const [pendingVerificationCount, setPendingVerificationCount] = useState(0);
+  const [uniWidgets, setUniWidgets] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Modal display states
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
@@ -41,17 +86,19 @@ export default function DashboardPage() {
 
   const loadData = async () => {
     try {
-      const [leadsData, followupsData, activitiesData, expiringData, allDocs] = await Promise.all([
+      const [leadsData, followupsData, activitiesData, expiringData, allDocs, uniWidgetsData] = await Promise.all([
         api.get('/api/v1/leads'),
         api.get('/api/v1/followups'),
         api.get('/api/v1/leads/meta/activities'),
         api.get('/api/v1/documents/expiring?days=90'),
-        api.get('/api/v1/documents')
+        api.get('/api/v1/documents'),
+        api.get('/api/v1/applications/dashboard/widgets').catch(() => null)
       ]);
       setLeads(leadsData || []);
       setFollowups(followupsData || []);
       setActivities(activitiesData || []);
       setExpiringDocs(expiringData || []);
+      setUniWidgets(uniWidgetsData);
 
       // Filter documents where status is UPLOADED (Pending counselor verification)
       const pendingCount = (allDocs || []).filter((d: any) => d.status === 'UPLOADED').length;
@@ -117,12 +164,18 @@ export default function DashboardPage() {
       return;
     }
 
+    const validation = validateFollowupDateTime(followupForm.followupDate);
+    if (!validation.isValid) {
+      setErrorMsg(validation.errorMsg);
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMsg('');
     try {
       await api.post('/api/v1/followups', {
         leadId: followupForm.leadId,
-        followupDate: new Date(followupForm.followupDate).toISOString(),
+        followupDate: parseLocalISOString(followupForm.followupDate).toISOString(),
         notes: followupForm.notes
       });
       setShowFollowupModal(false);
@@ -148,7 +201,9 @@ export default function DashboardPage() {
   const ieltsCount = leads.filter(l => l.leadCategory === 'IELTS').length;
   const pteCount = leads.filter(l => l.leadCategory === 'PTE').length;
   const englishSpeakingCount = leads.filter(l => l.leadCategory === 'ENGLISH_SPEAKING').length;
-  const computerCourseCount = leads.filter(l => l.leadCategory === 'COMPUTER_COURSE' || l.leadCategory === 'DIGITAL_MARKETING').length;
+  const computerCourseCount = leads.filter(l => l.leadCategory === 'COMPUTER_COURSE').length;
+  const digitalMarketingCount = leads.filter(l => l.leadCategory === 'DIGITAL_MARKETING').length;
+  const otherCount = leads.filter(l => l.leadCategory === 'OTHER').length;
 
   const admissionReadyCount = leads.filter(l => (l.readinessScore ?? 0) >= 80).length;
   const needsAttentionCount = leads.filter(l => (l.readinessScore ?? 0) < 80).length;
@@ -157,15 +212,66 @@ export default function DashboardPage() {
     .filter(f => f.status === 'SCHEDULED' && new Date(f.followupDate) >= new Date())
     .sort((a, b) => new Date(a.followupDate).getTime() - new Date(b.followupDate).getTime());
 
+  const filteredUpcomingFollowups = upcomingFollowups.filter(f => {
+    const leadName = f.lead ? `${f.lead.firstName} ${f.lead.lastName || ''}`.toLowerCase() : '';
+    return leadName.includes(searchQuery.toLowerCase());
+  });
+
+  const filteredExpiringDocs = expiringDocs.filter(d => {
+    const leadName = d.lead ? `${d.lead.firstName} ${d.lead.lastName || ''}`.toLowerCase() : '';
+    return leadName.includes(searchQuery.toLowerCase());
+  });
+
+  const filteredActivities = activities.filter(act => {
+    const leadName = act.lead ? `${act.lead.firstName} ${act.lead.lastName || ''}`.toLowerCase() : '';
+    return leadName.includes(searchQuery.toLowerCase());
+  });
+
   return (
     <div style={{ paddingBottom: '40px' }}>
       {/* Top Banner & Quick Actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border-color)', background: '#fff', gap: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border-color)', background: '#fff', gap: '16px', flexWrap: 'wrap' }}>
         <div>
           <h2 style={{ fontSize: '15px', fontWeight: 700 }}>Study Metro CRM Dashboard</h2>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Welcome back, {user?.firstName}. Managing single organization operations.</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Search Input */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              placeholder="Search leads by name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#fff',
+                outline: 'none',
+                width: '200px'
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  marginLeft: '-28px',
+                  marginRight: '14px',
+                  zIndex: 10
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
           <button onClick={() => { setErrorMsg(''); setShowNewLeadModal(true); }} className="btn btn-primary">
             ➕ New Lead
           </button>
@@ -208,6 +314,82 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* Study Abroad Admissions Funnel */}
+      {uniWidgets && (
+        <div style={{ padding: '0 20px', marginTop: '16px' }}>
+          <div style={{ backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+              🎓 Study Abroad Admissions Funnel
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px' }}>
+              <div style={{ padding: '8px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '4px', textAlign: 'center' }}>
+                <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: 700 }}>Applications in Progress</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#0284c7', marginTop: '4px' }}>{uniWidgets.applicationsInProgress}</div>
+              </div>
+              <div style={{ padding: '8px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '4px', textAlign: 'center' }}>
+                <div style={{ fontSize: '10px', color: '#b45309', fontWeight: 700 }}>Offers Received</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>{uniWidgets.offersReceived}</div>
+              </div>
+              <div style={{ padding: '8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', textAlign: 'center' }}>
+                <div style={{ fontSize: '10px', color: '#166534', fontWeight: 700 }}>Offers Accepted</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#16a34a', marginTop: '4px' }}>{uniWidgets.offerAccepted}</div>
+              </div>
+              <div style={{ padding: '8px', background: '#fdf2f8', border: '1px solid #fbcfe8', borderRadius: '4px', textAlign: 'center' }}>
+                <div style={{ fontSize: '10px', color: '#9d174d', fontWeight: 700 }}>Visa Applied</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#db2777', marginTop: '4px' }}>{uniWidgets.visaApplied}</div>
+              </div>
+              <div style={{ padding: '8px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '4px', textAlign: 'center' }}>
+                <div style={{ fontSize: '10px', color: '#065f46', fontWeight: 700 }}>Visa Approved</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#059669', marginTop: '4px' }}>{uniWidgets.visaApproved}</div>
+              </div>
+              <div style={{ padding: '8px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '4px', textAlign: 'center' }}>
+                <div style={{ fontSize: '10px', color: '#5b21b6', fontWeight: 700 }}>Students Enrolled</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#7c3aed', marginTop: '4px' }}>{uniWidgets.studentsEnrolled}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Counters Grid */}
+      <div style={{ padding: '0 20px', marginTop: '16px' }}>
+        <div style={{ backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+            📊 Category Ingress Counters
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px' }}>
+            <div style={{ padding: '8px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Study Abroad</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary-color)' }}>{studyAbroadCount}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>IELTS</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary-color)' }}>{ieltsCount}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>PTE</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary-color)' }}>{pteCount}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>English Speaking</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary-color)' }}>{englishSpeakingCount}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Computer Course</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary-color)' }}>{computerCourseCount}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Digital Marketing</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary-color)' }}>{digitalMarketingCount}</div>
+            </div>
+            <div style={{ padding: '8px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Other</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary-color)' }}>{otherCount}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Compliance / Readiness score overview banner */}
       <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '0 20px', marginTop: '10px' }}>
         <div style={{ padding: '16px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -235,13 +417,13 @@ export default function DashboardPage() {
           <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
             ⚠️ Documents Expiring Soon (90 Days)
           </h3>
-          {expiringDocs.length === 0 ? (
+          {filteredExpiringDocs.length === 0 ? (
             <div style={{ padding: '20px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px' }}>
-              No document expirations detected in the next 90 days.
+              No document expirations detected.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {expiringDocs.map((doc) => (
+              {filteredExpiringDocs.map((doc) => (
                 <div key={doc.id} style={{ padding: '10px', background: '#fff2f2', border: '1px solid #fca5a5', borderRadius: '4px', fontSize: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                     <a href={`/dashboard/leads/${doc.lead?.id}`} style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
@@ -265,13 +447,13 @@ export default function DashboardPage() {
           <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
             📅 Upcoming Followups
           </h3>
-          {upcomingFollowups.length === 0 ? (
+          {filteredUpcomingFollowups.length === 0 ? (
             <div style={{ padding: '20px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px' }}>
               No upcoming scheduled followups.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {upcomingFollowups.slice(0, 5).map((f) => (
+              {filteredUpcomingFollowups.slice(0, 5).map((f) => (
                 <div key={f.id} style={{ padding: '10px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                     <a href={`/dashboard/leads/${f.lead?.id}`} style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
@@ -297,13 +479,13 @@ export default function DashboardPage() {
           <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
             📞 Recent Lead Activities
           </h3>
-          {activities.length === 0 ? (
+          {filteredActivities.length === 0 ? (
             <div style={{ padding: '20px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px' }}>
               No recent activity recorded.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {activities.slice(0, 5).map((act) => (
+              {filteredActivities.slice(0, 5).map((act) => (
                 <div key={act.id} style={{ padding: '10px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <strong style={{ color: '#334155' }}>{act.type.replace(/_/g, ' ')}</strong>
@@ -432,7 +614,15 @@ export default function DashboardPage() {
 
             <div className="form-group">
               <label>Date and Time *</label>
-              <input type="datetime-local" className="form-control" required value={followupForm.followupDate} onChange={e => setFollowupForm({ ...followupForm, followupDate: e.target.value })} />
+              <input
+                type="datetime-local"
+                className="form-control"
+                required
+                value={followupForm.followupDate}
+                onChange={e => setFollowupForm({ ...followupForm, followupDate: e.target.value })}
+                onClick={(e) => e.currentTarget.showPicker?.()}
+                min={minDateTime}
+              />
             </div>
 
             <div className="form-group">

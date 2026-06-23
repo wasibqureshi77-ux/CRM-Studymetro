@@ -79,15 +79,21 @@ const PIPELINE_CONFIG: Record<string, { code: string; label: string; color: stri
 
 export default function ReportsPage() {
   const [leads, setLeads] = useState<any[]>([]);
+  const [uniReports, setUniReports] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('STUDY_ABROAD');
   const [errorMsg, setErrorMsg] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/leads');
-      setLeads(res || []);
+      const [leadsRes, uniReportsRes] = await Promise.all([
+        api.get('/api/v1/leads'),
+        api.get('/api/v1/applications/dashboard/reports').catch(() => null)
+      ]);
+      setLeads(leadsRes || []);
+      setUniReports(uniReportsRes);
     } catch (err: any) {
       console.error('Failed to load leads for reports', err);
       setErrorMsg(err.message || 'Failed to load report data.');
@@ -108,7 +114,11 @@ export default function ReportsPage() {
     );
   }
 
-  const filteredLeads = leads.filter(l => (l.leadCategory || 'STUDY_ABROAD') === selectedCategory);
+  const filteredLeads = leads.filter(l => {
+    const matchesCategory = (l.leadCategory || 'STUDY_ABROAD') === selectedCategory;
+    const fullName = `${l.firstName} ${l.lastName || ''}`.toLowerCase();
+    return matchesCategory && fullName.includes(searchQuery.toLowerCase());
+  });
   const totalLeads = filteredLeads.length;
 
   // 1. Monthly Leads Calculation
@@ -152,7 +162,9 @@ export default function ReportsPage() {
   const funnelStages = PIPELINE_CONFIG[selectedCategory] || PIPELINE_CONFIG.STUDY_ABROAD;
 
   const funnelData = funnelStages.map((stage) => {
-    const count = filteredLeads.filter((l) => l.status === stage.code).length;
+    const count = filteredLeads.filter((l) => 
+      l.status === stage.code || (stage.code === 'ADMISSION_CLOSED' && l.status === 'ENROLLED')
+    ).length;
     return {
       stage: stage.label,
       count,
@@ -171,30 +183,67 @@ export default function ReportsPage() {
           </p>
         </div>
 
-        {/* Category selector filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Category View:</label>
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            style={{
-              padding: '6px 12px',
-              fontSize: '12px',
-              fontWeight: 600,
-              borderRadius: '6px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: '#fff',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="STUDY_ABROAD">Study Abroad</option>
-            <option value="IELTS">IELTS</option>
-            <option value="PTE">PTE</option>
-            <option value="ENGLISH_SPEAKING">English Speaking</option>
-            <option value="COMPUTER_COURSE">Computer Course</option>
-            <option value="DIGITAL_MARKETING">Digital Marketing</option>
-            <option value="OTHER">Other</option>
-          </select>
+        {/* Search & Category selector filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              placeholder="Search leads by name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#fff',
+                outline: 'none',
+                width: '200px'
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  marginLeft: '-28px',
+                  marginRight: '14px',
+                  zIndex: 10
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Category View:</label>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="STUDY_ABROAD">Study Abroad</option>
+              <option value="IELTS">IELTS</option>
+              <option value="PTE">PTE</option>
+              <option value="ENGLISH_SPEAKING">English Speaking</option>
+              <option value="COMPUTER_COURSE">Computer Course</option>
+              <option value="DIGITAL_MARKETING">Digital Marketing</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -348,6 +397,121 @@ export default function ReportsPage() {
         </div>
 
       </div>
+
+      {selectedCategory === 'STUDY_ABROAD' && uniReports && (
+        <>
+          <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '20px', paddingTop: '20px' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0' }}>🎓 University Admissions Analytics</h3>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '0 0 16px 0' }}>Detailed metrics regarding shortlist pipelines, offer conversions and visa success rates.</p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+            {/* Conversion Metrics */}
+            <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ fontSize: '13px', fontWeight: 700, margin: 0, paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
+                🎯 Funnel Conversion Performance
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '4px', border: '1px solid #bbf7d0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>Offer Conversion Rate</div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: '#16a34a', marginTop: '6px' }}>{uniReports.offerConversionRate}%</div>
+                  <div style={{ fontSize: '9px', color: '#15803d', marginTop: '4px' }}>Accepted / Total Received</div>
+                </div>
+                <div style={{ background: '#ecfdf5', padding: '16px', borderRadius: '4px', border: '1px solid #a7f3d0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '11px', color: '#065f46', fontWeight: 700 }}>Visa Approval Rate</div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: '#059669', marginTop: '6px' }}>{uniReports.visaApprovalRate}%</div>
+                  <div style={{ fontSize: '9px', color: '#047857', marginTop: '4px' }}>Approved / Total Decisions</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Top Universities */}
+            <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+              <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
+                🏫 Top Shortlisted Universities
+              </h3>
+              <table className="dense-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>University</th>
+                    <th style={{ width: '80px', textAlign: 'right' }}>Shortlists</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uniReports.topUniversities?.map((u: any, idx: number) => (
+                    <tr key={idx}>
+                      <td><strong>{u.name}</strong></td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{u.count}</td>
+                    </tr>
+                  ))}
+                  {(!uniReports.topUniversities || uniReports.topUniversities.length === 0) && (
+                    <tr>
+                      <td colSpan={2} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No data available</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Applications by Country */}
+            <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+              <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
+                🗺️ Applications by Destination Country
+              </h3>
+              <table className="dense-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>Country</th>
+                    <th style={{ width: '80px', textAlign: 'right' }}>Applications</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uniReports.byCountry?.map((c: any, idx: number) => (
+                    <tr key={idx}>
+                      <td><strong>{c.name}</strong></td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{c.count}</td>
+                    </tr>
+                  ))}
+                  {(!uniReports.byCountry || uniReports.byCountry.length === 0) && (
+                    <tr>
+                      <td colSpan={2} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No data available</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Applications by Intake */}
+            <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '16px' }}>
+              <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
+                📅 Applications by Intake Period
+              </h3>
+              <table className="dense-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>Intake</th>
+                    <th style={{ width: '80px', textAlign: 'right' }}>Applications</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uniReports.byIntake?.map((i: any, idx: number) => (
+                    <tr key={idx}>
+                      <td><strong>{i.name}</strong></td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{i.count}</td>
+                    </tr>
+                  ))}
+                  {(!uniReports.byIntake || uniReports.byIntake.length === 0) && (
+                    <tr>
+                      <td colSpan={2} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No data available</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
     </div>
   );
 }

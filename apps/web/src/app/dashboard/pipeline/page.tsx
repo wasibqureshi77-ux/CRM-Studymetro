@@ -27,6 +27,7 @@ interface Lead {
   leadCategory?: string;
   studentProfile?: StudentProfile;
   followups?: Followup[];
+  readinessScore?: number;
 }
 
 const PIPELINE_CONFIG: Record<string, { code: string; label: string; color: string }[]> = {
@@ -104,10 +105,14 @@ const PIPELINE_CONFIG: Record<string, { code: string; label: string; color: stri
 };
 
 function getProgressPercentage(status: string, category: string): number {
+  let activeStatus = status;
+  if (status === 'ENROLLED' && (!category || category === 'STUDY_ABROAD')) {
+    activeStatus = 'ADMISSION_CLOSED';
+  }
   const stages = PIPELINE_CONFIG[category || 'STUDY_ABROAD'] || PIPELINE_CONFIG.STUDY_ABROAD;
-  if (status === 'LOST') return 0;
+  if (activeStatus === 'LOST') return 0;
   const nonLostStages = stages.filter(s => s.code !== 'LOST');
-  const nonLostIndex = nonLostStages.findIndex(s => s.code === status);
+  const nonLostIndex = nonLostStages.findIndex(s => s.code === activeStatus);
   if (nonLostIndex === -1) return 0;
   if (nonLostStages.length <= 1) return 100;
   return Math.round((nonLostIndex / (nonLostStages.length - 1)) * 100);
@@ -119,7 +124,19 @@ export default function PipelinePage() {
   const [loading, setLoading] = useState(true);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('STUDY_ABROAD');
+  const [searchQuery, setSearchQuery] = useState('');
   const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
+
+  // University capture modal states on drag-to-applied
+  const [showUniModal, setShowUniModal] = useState(false);
+  const [modalLeadId, setModalLeadId] = useState('');
+  const [modalLeadName, setModalLeadName] = useState('');
+  const [uniName, setUniName] = useState('');
+  const [uniCountry, setUniCountry] = useState('');
+  const [uniCourse, setUniCourse] = useState('');
+  const [uniIntake, setUniIntake] = useState('');
+  const [uniNotes, setUniNotes] = useState('');
+  const [isSubmittingUni, setIsSubmittingUni] = useState(false);
 
   const addToast = (type: 'success' | 'error', message: string) => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -162,6 +179,7 @@ export default function PipelinePage() {
 
   const handleDrop = async (e: React.DragEvent, targetStatus: string) => {
     e.preventDefault();
+    setDraggingId(null);
     const leadId = e.dataTransfer.getData('text/plain');
     if (!leadId) return;
 
@@ -170,6 +188,34 @@ export default function PipelinePage() {
 
     // Check if status is actually changing
     if (matchedLead.status === targetStatus) return;
+
+    const RESTRICTED_STAGES = [
+      'DOCUMENTS_RECEIVED',
+      'UNIVERSITY_APPLIED',
+      'OFFER_LETTER',
+      'VISA_PROCESS',
+      'ADMISSION_CLOSED'
+    ];
+    if (RESTRICTED_STAGES.includes(targetStatus)) {
+      const readiness = matchedLead.readinessScore ?? 0;
+      if (readiness < 100) {
+        addToast('error', `Cannot move ${matchedLead.firstName} to ${targetStatus.replace(/_/g, ' ')} until all required documents are 100% verified.`);
+        return;
+      }
+    }
+
+    // Intercept Study Abroad leads moving to University Applied
+    if ((matchedLead.leadCategory || 'STUDY_ABROAD') === 'STUDY_ABROAD' && targetStatus === 'UNIVERSITY_APPLIED') {
+      setModalLeadId(leadId);
+      setModalLeadName(`${matchedLead.firstName} ${matchedLead.lastName || ''}`);
+      setUniName('');
+      setUniCountry('');
+      setUniCourse('');
+      setUniIntake('');
+      setUniNotes('');
+      setShowUniModal(true);
+      return;
+    }
 
     const originalStatus = matchedLead.status;
 
@@ -198,6 +244,44 @@ export default function PipelinePage() {
     }
   };
 
+  const handleUniModalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uniName.trim() || !uniCountry.trim() || !uniCourse.trim() || !uniIntake.trim()) {
+      addToast('error', 'Please fill in all required fields.');
+      return;
+    }
+    setIsSubmittingUni(true);
+    try {
+      // 1. Create shortlisted application
+      const app = await api.post('/api/v1/applications', {
+        leadId: modalLeadId,
+        universityName: uniName,
+        country: uniCountry,
+        courseName: uniCourse,
+        intake: uniIntake,
+        notes: uniNotes
+      });
+
+      // 2. Set application status to APPLICATION_STARTED
+      await api.patch(`/api/v1/applications/${app.id}`, {
+        applicationStatus: 'APPLICATION_STARTED'
+      });
+
+      // 3. Move Lead status
+      await api.patch(`/api/v1/leads/${modalLeadId}`, {
+        status: 'UNIVERSITY_APPLIED'
+      });
+
+      addToast('success', `Shortlisted ${uniName} and moved ${modalLeadName} to University Applied.`);
+      setShowUniModal(false);
+      await fetchLeads();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to shortlist university.');
+    } finally {
+      setIsSubmittingUni(false);
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ padding: '20px', fontWeight: 600 }}>
@@ -207,7 +291,11 @@ export default function PipelinePage() {
   }
 
   const currentStages = PIPELINE_CONFIG[selectedCategory] || PIPELINE_CONFIG.STUDY_ABROAD;
-  const filteredLeads = leads.filter((l) => (l.leadCategory || 'STUDY_ABROAD') === selectedCategory);
+  const filteredLeads = leads.filter((l) => {
+    const matchesCategory = (l.leadCategory || 'STUDY_ABROAD') === selectedCategory;
+    const fullName = `${l.firstName} ${l.lastName || ''}`.toLowerCase();
+    return matchesCategory && fullName.includes(searchQuery.toLowerCase());
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 65px)', overflow: 'hidden', padding: '16px' }}>
@@ -221,30 +309,67 @@ export default function PipelinePage() {
           </p>
         </div>
 
-        {/* Category selector filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Category:</label>
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            style={{
-              padding: '6px 12px',
-              fontSize: '12px',
-              fontWeight: 600,
-              borderRadius: '6px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: '#fff',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="STUDY_ABROAD">Study Abroad</option>
-            <option value="IELTS">IELTS</option>
-            <option value="PTE">PTE</option>
-            <option value="ENGLISH_SPEAKING">English Speaking</option>
-            <option value="COMPUTER_COURSE">Computer Course</option>
-            <option value="DIGITAL_MARKETING">Digital Marketing</option>
-            <option value="OTHER">Other</option>
-          </select>
+        {/* Search & Category selector filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              placeholder="Search leads by name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#fff',
+                outline: 'none',
+                width: '200px'
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  marginLeft: '-28px',
+                  marginRight: '14px',
+                  zIndex: 10
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Category:</label>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="STUDY_ABROAD">Study Abroad</option>
+              <option value="IELTS">IELTS</option>
+              <option value="PTE">PTE</option>
+              <option value="ENGLISH_SPEAKING">English Speaking</option>
+              <option value="COMPUTER_COURSE">Computer Course</option>
+              <option value="DIGITAL_MARKETING">Digital Marketing</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -259,7 +384,9 @@ export default function PipelinePage() {
         alignItems: 'stretch'
       }}>
         {currentStages.map((stage) => {
-          const stageLeads = filteredLeads.filter((l) => l.status === stage.code);
+          const stageLeads = filteredLeads.filter((l) => 
+            l.status === stage.code || (stage.code === 'ADMISSION_CLOSED' && l.status === 'ENROLLED')
+          );
           return (
             <div
               key={stage.code}
@@ -440,6 +567,83 @@ export default function PipelinePage() {
           );
         })}
       </div>
+
+      {/* University Application Modal */}
+      {showUniModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <form onSubmit={handleUniModalSubmit} className="login-card" style={{ width: '400px', display: 'flex', flexDirection: 'column', gap: '12px', textAlign: 'left' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 700, borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', margin: 0 }}>
+              Apply to University for {modalLeadName}
+            </h3>
+            
+            <div className="form-group">
+              <label>University Name *</label>
+              <input
+                type="text"
+                className="form-control"
+                required
+                value={uniName}
+                onChange={(e) => setUniName(e.target.value)}
+                placeholder="e.g. University of Toronto"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Country *</label>
+              <input
+                type="text"
+                className="form-control"
+                required
+                value={uniCountry}
+                onChange={(e) => setUniCountry(e.target.value)}
+                placeholder="e.g. Canada"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Course *</label>
+              <input
+                type="text"
+                className="form-control"
+                required
+                value={uniCourse}
+                onChange={(e) => setUniCourse(e.target.value)}
+                placeholder="e.g. M.S. in Computer Science"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Intake *</label>
+              <input
+                type="text"
+                className="form-control"
+                required
+                value={uniIntake}
+                onChange={(e) => setUniIntake(e.target.value)}
+                placeholder="e.g. Fall 2026"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Notes / Remarks</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                value={uniNotes}
+                onChange={(e) => setUniNotes(e.target.value)}
+                placeholder="Any special remarks..."
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '6px' }}>
+              <button type="button" className="btn" disabled={isSubmittingUni} onClick={() => setShowUniModal(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={isSubmittingUni}>
+                {isSubmittingUni ? 'Submitting...' : 'Apply university'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Toast container */}
       <div style={{ position: 'fixed', bottom: '20px', right: '20px', display: 'flex', flexDirection: 'column', gap: '10px', zIndex: 9999 }}>

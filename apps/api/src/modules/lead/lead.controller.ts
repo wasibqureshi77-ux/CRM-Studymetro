@@ -64,7 +64,18 @@ export class LeadController {
     @Query('targetCountry') targetCountry?: string,
     @Query('intake') intake?: string,
     @Query('leadCategory') leadCategory?: LeadCategory,
-    @Query('q') q?: string
+    @Query('targetScore') targetScore?: string,
+    @Query('planningTimeline') planningTimeline?: string,
+    @Query('purpose') purpose?: string,
+    @Query('courseInterest') courseInterest?: string,
+    @Query('q') q?: string,
+    @Query('appCountry') appCountry?: string,
+    @Query('appUniversity') appUniversity?: string,
+    @Query('appCourse') appCourse?: string,
+    @Query('appIntake') appIntake?: string,
+    @Query('applicationStatus') applicationStatus?: string,
+    @Query('offerStatus') offerStatus?: string,
+    @Query('visaStatus') visaStatus?: string
   ) {
     const tenantId = req.tenantId!;
     const activeBranchId = req.branchId || branchId;
@@ -75,7 +86,18 @@ export class LeadController {
       targetCountry,
       intake,
       leadCategory,
-      q
+      targetScore,
+      planningTimeline,
+      purpose,
+      courseInterest,
+      q,
+      appCountry,
+      appUniversity,
+      appCourse,
+      appIntake,
+      applicationStatus,
+      offerStatus,
+      visaStatus
     });
   }
 

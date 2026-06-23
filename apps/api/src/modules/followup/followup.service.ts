@@ -17,6 +17,15 @@ export class FollowupService {
       throw new NotFoundException('Lead not found under tenant');
     }
 
+    const selectedDateTime = new Date(dto.followupDate);
+    const now = new Date();
+
+    if (selectedDateTime <= now) {
+      throw new BadRequestException(
+        'Follow-up date and time must be in the future'
+      );
+    }
+
     // 2. Create Followup
     const followup = await this.prisma.followup.create({
       data: {
@@ -73,7 +82,10 @@ export class FollowupService {
     const updated = await this.prisma.followup.update({
       where: { id },
       data: {
-        status: dto.status
+        status: dto.status,
+        notes: dto.notes
+          ? (followup.notes ? `${followup.notes} | Completion Remark: ${dto.notes}` : dto.notes)
+          : undefined
       }
     });
 
@@ -83,8 +95,8 @@ export class FollowupService {
         leadId: followup.leadId,
         actorId,
         type: 'FOLLOWUP_STATUS_CHANGE',
-        description: `Followup status changed from ${followup.status} to ${dto.status}`,
-        meta: { followupId: id, from: followup.status, to: dto.status }
+        description: `Followup status changed from ${followup.status} to ${dto.status}${dto.notes ? ` (Remarks: ${dto.notes})` : ''}`,
+        meta: { followupId: id, from: followup.status, to: dto.status, remarks: dto.notes }
       }
     });
 
@@ -115,7 +127,7 @@ export class FollowupService {
           select: { id: true, firstName: true, lastName: true, status: true, phone: true }
         }
       },
-      orderBy: { followupDate: 'asc' }
+      orderBy: { createdAt: 'desc' }
     });
   }
 
@@ -132,7 +144,7 @@ export class FollowupService {
           select: { id: true, firstName: true, lastName: true }
         }
       },
-      orderBy: { followupDate: 'asc' }
+      orderBy: { createdAt: 'desc' }
     });
   }
 
@@ -147,6 +159,15 @@ export class FollowupService {
 
     if (!followup) {
       throw new NotFoundException('Followup not found');
+    }
+
+    const selectedDateTime = new Date(dto.followupDate);
+    const now = new Date();
+
+    if (selectedDateTime <= now) {
+      throw new BadRequestException(
+        'Follow-up date and time must be in the future'
+      );
     }
 
     const beforeState = { ...followup };

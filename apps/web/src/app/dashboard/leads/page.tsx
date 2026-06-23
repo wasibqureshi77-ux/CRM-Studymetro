@@ -4,6 +4,94 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../context/auth-context';
 
+const PIPELINE_CONFIG: Record<string, { code: string; label: string; color: string }[]> = {
+  STUDY_ABROAD: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'COUNSELLING', label: 'Counselling', color: '#6366f1' },
+    { code: 'DOCUMENTS_PENDING', label: 'Documents Pending', color: '#f59e0b' },
+    { code: 'DOCUMENTS_RECEIVED', label: 'Documents Received', color: '#d97706' },
+    { code: 'UNIVERSITY_APPLIED', label: 'University Applied', color: '#3b82f6' },
+    { code: 'OFFER_LETTER', label: 'Offer Letter Received', color: '#ec4899' },
+    { code: 'VISA_PROCESS', label: 'Visa Process', color: '#f43f5e' },
+    { code: 'ADMISSION_CLOSED', label: 'Admission Closed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  IELTS: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'DEMO_CLASS', label: 'Demo Class', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'TRAINING', label: 'Training', color: '#6366f1' },
+    { code: 'EXAM_BOOKED', label: 'Exam Booked', color: '#ec4899' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  PTE: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'DEMO_CLASS', label: 'Demo Class', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'TRAINING', label: 'Training', color: '#6366f1' },
+    { code: 'EXAM_BOOKED', label: 'Exam Booked', color: '#ec4899' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  ENGLISH_SPEAKING: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'DEMO_CLASS', label: 'Demo Class', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'TRAINING', label: 'Training', color: '#6366f1' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  COMPUTER_COURSE: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'COUNSELLING', label: 'Counselling', color: '#6366f1' },
+    { code: 'DEMO_SESSION', label: 'Demo Session', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'COURSE_ONGOING', label: 'Course Ongoing', color: '#a855f7' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  DIGITAL_MARKETING: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'COUNSELLING', label: 'Counselling', color: '#6366f1' },
+    { code: 'DEMO_SESSION', label: 'Demo Session', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'COURSE_ONGOING', label: 'Course Ongoing', color: '#a855f7' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+  OTHER: [
+    { code: 'NEW_LEAD', label: 'New Lead', color: '#64748b' },
+    { code: 'CONTACTED', label: 'Contacted', color: '#0ea5e9' },
+    { code: 'COUNSELLING', label: 'Counselling', color: '#6366f1' },
+    { code: 'DEMO_SESSION', label: 'Demo Session', color: '#8b5cf6' },
+    { code: 'ENROLLED', label: 'Enrolled', color: '#14b8a6' },
+    { code: 'COURSE_ONGOING', label: 'Course Ongoing', color: '#a855f7' },
+    { code: 'COMPLETED', label: 'Completed', color: '#10b981' },
+    { code: 'LOST', label: 'Lost / Not Interested', color: '#ef4444' },
+  ],
+};
+
+function getProgressPercentage(status: string, category: string): number {
+  let activeStatus = status;
+  if (status === 'ENROLLED' && (!category || category === 'STUDY_ABROAD')) {
+    activeStatus = 'ADMISSION_CLOSED';
+  }
+  const stages = PIPELINE_CONFIG[category || 'STUDY_ABROAD'] || PIPELINE_CONFIG.STUDY_ABROAD;
+  if (activeStatus === 'LOST') return 0;
+  const nonLostStages = stages.filter(s => s.code !== 'LOST');
+  const nonLostIndex = nonLostStages.findIndex(s => s.code === activeStatus);
+  if (nonLostIndex === -1) return 0;
+  if (nonLostStages.length <= 1) return 100;
+  return Math.round((nonLostIndex / (nonLostStages.length - 1)) * 100);
+}
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -18,6 +106,19 @@ export default function LeadsPage() {
   const [countryFilter, setCountryFilter] = useState('');
   const [intakeFilter, setIntakeFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [targetScoreFilter, setTargetScoreFilter] = useState('');
+  const [planningTimelineFilter, setPlanningTimelineFilter] = useState('');
+  const [purposeFilter, setPurposeFilter] = useState('');
+  const [courseInterestFilter, setCourseInterestFilter] = useState('');
+
+  // University Applications Filters
+  const [appUniversityFilter, setAppUniversityFilter] = useState('');
+  const [appCountryFilter, setAppCountryFilter] = useState('');
+  const [appCourseFilter, setAppCourseFilter] = useState('');
+  const [appIntakeFilter, setAppIntakeFilter] = useState('');
+  const [appStatusFilter, setAppStatusFilter] = useState('');
+  const [appOfferStatusFilter, setAppOfferStatusFilter] = useState('');
+  const [appVisaStatusFilter, setAppVisaStatusFilter] = useState('');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -78,6 +179,21 @@ export default function LeadsPage() {
       if (countryFilter) params.set('targetCountry', countryFilter);
       if (intakeFilter) params.set('intake', intakeFilter);
       if (categoryFilter) params.set('leadCategory', categoryFilter);
+      if (targetScoreFilter) params.set('targetScore', targetScoreFilter);
+      if (planningTimelineFilter) params.set('planningTimeline', planningTimelineFilter);
+      if (purposeFilter) params.set('purpose', purposeFilter);
+      if (courseInterestFilter) params.set('courseInterest', courseInterestFilter);
+
+      // Bind university application filters
+      if (categoryFilter === 'STUDY_ABROAD') {
+        if (appUniversityFilter) params.set('appUniversity', appUniversityFilter);
+        if (appCountryFilter) params.set('appCountry', appCountryFilter);
+        if (appCourseFilter) params.set('appCourse', appCourseFilter);
+        if (appIntakeFilter) params.set('appIntake', appIntakeFilter);
+        if (appStatusFilter) params.set('applicationStatus', appStatusFilter);
+        if (appOfferStatusFilter) params.set('offerStatus', appOfferStatusFilter);
+        if (appVisaStatusFilter) params.set('visaStatus', appVisaStatusFilter);
+      }
 
       const res = await api.get(`/api/v1/leads?${params.toString()}`);
       setLeads(res || []);
@@ -95,8 +211,26 @@ export default function LeadsPage() {
   }, []);
 
   useEffect(() => {
+    setCountryFilter('');
+    setIntakeFilter('');
+    setTargetScoreFilter('');
+    setPlanningTimelineFilter('');
+    setPurposeFilter('');
+    setCourseInterestFilter('');
+    
+    // Clear application filters
+    setAppUniversityFilter('');
+    setAppCountryFilter('');
+    setAppCourseFilter('');
+    setAppIntakeFilter('');
+    setAppStatusFilter('');
+    setAppOfferStatusFilter('');
+    setAppVisaStatusFilter('');
+  }, [categoryFilter]);
+
+  useEffect(() => {
     fetchLeads();
-  }, [q, statusFilter, sourceFilter, branchFilter, countryFilter, intakeFilter, categoryFilter]);
+  }, [q, statusFilter, sourceFilter, branchFilter, countryFilter, intakeFilter, categoryFilter, targetScoreFilter, planningTimelineFilter, purposeFilter, courseInterestFilter, appUniversityFilter, appCountryFilter, appCourseFilter, appIntakeFilter, appStatusFilter, appOfferStatusFilter, appVisaStatusFilter]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
@@ -144,6 +278,23 @@ export default function LeadsPage() {
     }
     setOperationError(null);
     setOperationSuccess(null);
+
+    const RESTRICTED_STAGES = [
+      'DOCUMENTS_RECEIVED',
+      'UNIVERSITY_APPLIED',
+      'OFFER_LETTER',
+      'VISA_PROCESS',
+      'ADMISSION_CLOSED'
+    ];
+    if (RESTRICTED_STAGES.includes(bulkStatus)) {
+      const unreadyLeads = leads.filter(l => selectedIds.includes(l.id) && (l.readinessScore ?? 0) < 100);
+      if (unreadyLeads.length > 0) {
+        const names = unreadyLeads.map(l => `${l.firstName} ${l.lastName || ''}`.trim()).join(', ');
+        setOperationError(`Cannot update status. The following leads do not have 100% verified documents: ${names}`);
+        return;
+      }
+    }
+
     try {
       await api.patch('/api/v1/leads/bulk-status', {
         leadIds: selectedIds,
@@ -337,23 +488,135 @@ export default function LeadsPage() {
           ))}
         </select>
 
-        <input
-          type="text"
-          placeholder="Country"
-          className="form-control"
-          style={{ width: '100px' }}
-          value={countryFilter}
-          onChange={(e) => setCountryFilter(e.target.value)}
-        />
+        {categoryFilter === 'STUDY_ABROAD' && (
+          <>
+            <input
+              type="text"
+              placeholder="Pref Country"
+              className="form-control"
+              style={{ width: '110px' }}
+              value={countryFilter}
+              onChange={(e) => setCountryFilter(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Pref Intake"
+              className="form-control"
+              style={{ width: '100px' }}
+              value={intakeFilter}
+              onChange={(e) => setIntakeFilter(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Timeline"
+              className="form-control"
+              style={{ width: '90px' }}
+              value={planningTimelineFilter}
+              onChange={(e) => setPlanningTimelineFilter(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="University"
+              className="form-control"
+              style={{ width: '120px' }}
+              value={appUniversityFilter}
+              onChange={(e) => setAppUniversityFilter(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="App Course"
+              className="form-control"
+              style={{ width: '110px' }}
+              value={appCourseFilter}
+              onChange={(e) => setAppCourseFilter(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="App Country"
+              className="form-control"
+              style={{ width: '110px' }}
+              value={appCountryFilter}
+              onChange={(e) => setAppCountryFilter(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="App Intake"
+              className="form-control"
+              style={{ width: '100px' }}
+              value={appIntakeFilter}
+              onChange={(e) => setAppIntakeFilter(e.target.value)}
+            />
+            <select
+              className="form-control"
+              value={appStatusFilter}
+              onChange={(e) => setAppStatusFilter(e.target.value)}
+            >
+              <option value="">-- App Status --</option>
+              <option value="SHORTLISTED">Shortlisted</option>
+              <option value="APPLICATION_STARTED">App Started</option>
+              <option value="APPLICATION_SUBMITTED">App Submitted</option>
+              <option value="UNDER_REVIEW">Under Review</option>
+              <option value="DECISION_RECEIVED">Decision Received</option>
+            </select>
+            <select
+              className="form-control"
+              value={appOfferStatusFilter}
+              onChange={(e) => setAppOfferStatusFilter(e.target.value)}
+            >
+              <option value="">-- Offer Status --</option>
+              <option value="NONE">None</option>
+              <option value="CONDITIONAL_OFFER">Conditional</option>
+              <option value="UNCONDITIONAL_OFFER">Unconditional</option>
+              <option value="OFFER_ACCEPTED">Accepted</option>
+              <option value="OFFER_REJECTED">Rejected</option>
+            </select>
+            <select
+              className="form-control"
+              value={appVisaStatusFilter}
+              onChange={(e) => setAppVisaStatusFilter(e.target.value)}
+            >
+              <option value="">-- Visa Status --</option>
+              <option value="NOT_STARTED">Not Started</option>
+              <option value="VISA_APPLIED">Visa Applied</option>
+              <option value="VISA_BIOMETRICS">Biometrics</option>
+              <option value="VISA_APPROVED">Visa Approved</option>
+              <option value="VISA_REJECTED">Visa Rejected</option>
+            </select>
+          </>
+        )}
 
-        <input
-          type="text"
-          placeholder="Intake"
-          className="form-control"
-          style={{ width: '90px' }}
-          value={intakeFilter}
-          onChange={(e) => setIntakeFilter(e.target.value)}
-        />
+        {(categoryFilter === 'IELTS' || categoryFilter === 'PTE') && (
+          <input
+            type="text"
+            placeholder="Target Score"
+            className="form-control"
+            style={{ width: '110px' }}
+            value={targetScoreFilter}
+            onChange={(e) => setTargetScoreFilter(e.target.value)}
+          />
+        )}
+
+        {categoryFilter === 'ENGLISH_SPEAKING' && (
+          <input
+            type="text"
+            placeholder="Purpose"
+            className="form-control"
+            style={{ width: '120px' }}
+            value={purposeFilter}
+            onChange={(e) => setPurposeFilter(e.target.value)}
+          />
+        )}
+
+        {categoryFilter === 'COMPUTER_COURSE' && (
+          <input
+            type="text"
+            placeholder="Course Interest"
+            className="form-control"
+            style={{ width: '135px' }}
+            value={courseInterestFilter}
+            onChange={(e) => setCourseInterestFilter(e.target.value)}
+          />
+        )}
       </section>
 
       {/* Bulk Actions Panel */}
@@ -457,11 +720,10 @@ export default function LeadsPage() {
                     />
                   </th>
                   <th>Name</th>
-                  <th>Readiness</th>
+                  <th>Progress</th>
                   <th>Phone</th>
                   <th>Category</th>
-                  <th>Country</th>
-                  <th>Course</th>
+                  <th>Program Details</th>
                   <th>Status</th>
                   <th>Next Followup</th>
                   <th>Created Date</th>
@@ -469,73 +731,101 @@ export default function LeadsPage() {
                 </tr>
               </thead>
               <tbody>
-                {currentLeads.map((lead) => {
-                  const nextFollowup = lead.followups?.[0];
-                  return (
-                    <tr key={lead.id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(lead.id)}
-                          onChange={(e) => handleSelectOne(lead.id, e.target.checked)}
-                        />
-                      </td>
-                      <td>
-                        <a
-                          href={`/dashboard/leads/${lead.id}`}
-                          style={{ color: 'var(--primary-color)', fontWeight: 600, textDecoration: 'none' }}
-                        >
-                          {lead.firstName || '—'} {lead.lastName || ''}
-                          {lead.submissionCount && (
-                            <span style={{ marginLeft: '6px', fontSize: '11px', color: '#475569', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
-                              [{lead.submissionCount}]
-                            </span>
-                          )}
-                        </a>
-                      </td>
-                      <td>
-                        <span
-                          className="badge"
-                          style={{
-                            backgroundColor:
-                              (lead.readinessScore ?? 0) >= 80 ? '#dcfce7' : (lead.readinessScore ?? 0) >= 50 ? '#fef9c3' : '#fee2e2',
-                            color:
-                              (lead.readinessScore ?? 0) >= 80 ? '#166534' : (lead.readinessScore ?? 0) >= 50 ? '#854d0e' : '#991b1b',
-                            fontWeight: 700
-                          }}
-                        >
-                          {lead.readinessScore ?? 0}%
-                        </span>
-                      </td>
-                      <td>{lead.phone || '—'}</td>
-                      <td>
-                        <span className="badge" style={{ backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid var(--border-color)' }}>
-                          {lead.leadCategory ? lead.leadCategory.replace(/_/g, ' ') : 'STUDY ABROAD'}
-                        </span>
-                      </td>
-                      <td>{lead.studentProfile?.targetCountry || '—'}</td>
-                      <td>{lead.studentProfile?.targetCourse || '—'}</td>
-                      <td>
-                        <span className={`badge badge-${lead.status.toLowerCase()}`}>
-                          {lead.status}
-                        </span>
-                      </td>
-                      <td>
-                        {nextFollowup ? (
-                          <span style={{ fontSize: '11px', fontWeight: 500 }}>
-                            {new Date(nextFollowup.followupDate).toLocaleDateString()}
+                {(() => {
+                  const getProgramDetails = (lead: any) => {
+                    const cat = lead.leadCategory || 'STUDY_ABROAD';
+                    switch (cat) {
+                      case 'STUDY_ABROAD':
+                        const country = lead.preferredCountry || lead.studentProfile?.targetCountry || '—';
+                        const courseStr = lead.preferredCourse || lead.studentProfile?.targetCourse || '—';
+                        return `${country} | ${courseStr}`;
+                      case 'IELTS':
+                      case 'PTE':
+                        return `Target ${lead.targetScore || '—'}`;
+                      case 'ENGLISH_SPEAKING':
+                        return lead.purpose || '—';
+                      case 'COMPUTER_COURSE':
+                        return lead.courseInterest || '—';
+                      case 'DIGITAL_MARKETING':
+                        return 'Digital Marketing';
+                      case 'OTHER':
+                      default:
+                        return 'Other';
+                    }
+                  };
+
+                  return currentLeads.map((lead) => {
+                    const nextFollowup = lead.followups?.[0];
+                    return (
+                      <tr key={lead.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(lead.id)}
+                            onChange={(e) => handleSelectOne(lead.id, e.target.checked)}
+                          />
+                        </td>
+                        <td>
+                          <a
+                            href={`/dashboard/leads/${lead.id}`}
+                            style={{ color: 'var(--primary-color)', fontWeight: 600, textDecoration: 'none' }}
+                          >
+                            {lead.firstName || '—'} {lead.lastName || ''}
+                            {lead.submissionCount && (
+                              <span style={{ marginLeft: '6px', fontSize: '11px', color: '#475569', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
+                                [{lead.submissionCount}]
+                              </span>
+                            )}
+                          </a>
+                        </td>
+                        <td>
+                          {(() => {
+                            const progressVal = getProgressPercentage(lead.status, lead.leadCategory || 'STUDY_ABROAD');
+                            return (
+                              <span
+                                className="badge"
+                                style={{
+                                  backgroundColor:
+                                    progressVal >= 80 ? '#dcfce7' : progressVal >= 50 ? '#fef9c3' : '#fee2e2',
+                                  color:
+                                    progressVal >= 80 ? '#166534' : progressVal >= 50 ? '#854d0e' : '#991b1b',
+                                  fontWeight: 700
+                                }}
+                              >
+                                {progressVal}%
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td>{lead.phone || '—'}</td>
+                        <td>
+                          <span className="badge" style={{ backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid var(--border-color)' }}>
+                            {lead.leadCategory ? lead.leadCategory.replace(/_/g, ' ') : 'STUDY_ABROAD'}
                           </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>
-                        )}
-                      </td>
-                      <td>
-                        {new Date(lead.createdAt).toLocaleDateString()}
-                      </td>
-                      <td>{lead.source}</td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td>{getProgramDetails(lead)}</td>
+                        <td>
+                          <span className={`badge badge-${lead.status.toLowerCase()}`}>
+                            {lead.status}
+                          </span>
+                        </td>
+                        <td>
+                          {nextFollowup ? (
+                            <span style={{ fontSize: '11px', fontWeight: 500 }}>
+                              {new Date(nextFollowup.followupDate).toLocaleDateString()}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          {new Date(lead.createdAt).toLocaleDateString()}
+                        </td>
+                        <td>{lead.source}</td>
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           )}

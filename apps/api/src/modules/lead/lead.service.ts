@@ -163,7 +163,18 @@ export class LeadService {
       targetCountry?: string;
       intake?: string;
       leadCategory?: LeadCategory;
+      targetScore?: string;
+      planningTimeline?: string;
+      purpose?: string;
+      courseInterest?: string;
       q?: string;
+      appCountry?: string;
+      appUniversity?: string;
+      appCourse?: string;
+      appIntake?: string;
+      applicationStatus?: string;
+      offerStatus?: string;
+      visaStatus?: string;
     }
   ) {
     const searchConditions: any[] = [];
@@ -181,6 +192,17 @@ export class LeadService {
       });
     }
 
+    const appConditions: any = {};
+    if (filters.appCountry) appConditions.country = { contains: filters.appCountry, mode: 'insensitive' };
+    if (filters.appUniversity) appConditions.universityName = { contains: filters.appUniversity, mode: 'insensitive' };
+    if (filters.appCourse) appConditions.courseName = { contains: filters.appCourse, mode: 'insensitive' };
+    if (filters.appIntake) appConditions.intake = { contains: filters.appIntake, mode: 'insensitive' };
+    if (filters.applicationStatus) appConditions.applicationStatus = filters.applicationStatus;
+    if (filters.offerStatus) appConditions.offerStatus = filters.offerStatus;
+    if (filters.visaStatus) appConditions.visaStatus = filters.visaStatus;
+
+    const hasAppFilters = Object.keys(appConditions).length > 0;
+
     return this.prisma.lead.findMany({
       where: {
         tenantId,
@@ -189,10 +211,13 @@ export class LeadService {
         branchId: filters.branchId,
         source: filters.source,
         leadCategory: filters.leadCategory,
-        studentProfile: (filters.targetCountry || filters.intake) ? {
-          targetCountry: filters.targetCountry,
-          intake: filters.intake
-        } : undefined,
+        preferredCountry: filters.targetCountry ? { contains: filters.targetCountry, mode: 'insensitive' } : undefined,
+        intendedIntake: filters.intake ? { contains: filters.intake, mode: 'insensitive' } : undefined,
+        targetScore: filters.targetScore ? { contains: filters.targetScore, mode: 'insensitive' } : undefined,
+        planningTimeline: filters.planningTimeline ? { contains: filters.planningTimeline, mode: 'insensitive' } : undefined,
+        purpose: filters.purpose ? { contains: filters.purpose, mode: 'insensitive' } : undefined,
+        courseInterest: filters.courseInterest ? { contains: filters.courseInterest, mode: 'insensitive' } : undefined,
+        applications: hasAppFilters ? { some: appConditions } : undefined,
         AND: searchConditions.length > 0 ? searchConditions : undefined
       },
       orderBy: {
@@ -242,6 +267,19 @@ export class LeadService {
     const beforeState = { ...lead };
     const normEmail = dto.email ? this.normalizeEmail(dto.email) : lead.normalizedEmail;
     const normPhone = dto.phone ? this.normalizePhone(dto.phone) : lead.normalizedPhone;
+
+    const RESTRICTED_STAGES = [
+      'DOCUMENTS_RECEIVED',
+      'UNIVERSITY_APPLIED',
+      'OFFER_LETTER',
+      'VISA_PROCESS',
+      'ADMISSION_CLOSED'
+    ];
+    if (dto.status && RESTRICTED_STAGES.includes(dto.status)) {
+      if (lead.readinessScore === null || lead.readinessScore < 100) {
+        throw new BadRequestException('Cannot move lead to Documents Received or later stages until all required documents are 100% verified (Readiness Score is 100%).');
+      }
+    }
 
     if (dto.status && dto.status !== lead.status) {
       this.validateStatusTransition(lead.status, dto.status, lead.studentProfile);
@@ -311,6 +349,43 @@ export class LeadService {
           meta: { from: lead.status, to: dto.status }
         }
       });
+
+      // Synchronize latest university application status for Study Abroad category leads
+      if (lead.leadCategory === 'STUDY_ABROAD') {
+        const latestApp = await this.prisma.application.findFirst({
+          where: { leadId: id },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        if (latestApp) {
+          if (dto.status === 'OFFER_LETTER') {
+            await this.prisma.application.update({
+              where: { id: latestApp.id },
+              data: {
+                applicationStatus: 'DECISION_RECEIVED',
+                offerStatus: 'CONDITIONAL_OFFER',
+                offerDate: latestApp.offerDate || new Date()
+              }
+            });
+          } else if (dto.status === 'VISA_PROCESS') {
+            await this.prisma.application.update({
+              where: { id: latestApp.id },
+              data: {
+                offerStatus: 'OFFER_ACCEPTED',
+                visaStatus: 'VISA_APPLIED',
+                visaDate: latestApp.visaDate || new Date()
+              }
+            });
+          } else if (dto.status === 'ADMISSION_CLOSED') {
+            await this.prisma.application.update({
+              where: { id: latestApp.id },
+              data: {
+                visaStatus: 'VISA_APPROVED'
+              }
+            });
+          }
+        }
+      }
     }
 
     await this.prisma.auditLog.create({
@@ -483,7 +558,7 @@ export class LeadService {
     const timeline = [
       ...lead.activities.map(a => ({ type: 'activity', date: a.createdAt, data: a })),
       ...lead.notes.map(n => ({ type: 'note', date: n.createdAt, data: n })),
-      ...lead.documents.map(d => ({ type: 'document', date: d.uploadedAt, data: d })),
+      ...lead.documents.filter(d => d.uploadedAt).map(d => ({ type: 'document', date: d.uploadedAt!, data: d })),
       ...lead.followups.map(f => ({ type: 'followup', date: f.createdAt, data: f })),
       ...lead.submissions.map((s, index) => ({
         type: 'submission',
@@ -495,7 +570,11 @@ export class LeadService {
       }))
     ];
 
-    return timeline.sort((a, b) => b.date.getTime() - a.date.getTime());
+    return timeline.sort((a, b) => {
+      const aTime = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
+      const bTime = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
+      return bTime - aTime;
+    });
   }
 
   async bulkAssign(leadIds: string[], assigneeId: string, branchId: string, tenantId: string, actorId: string) {
@@ -555,6 +634,32 @@ export class LeadService {
   }
 
   async bulkStatusUpdate(leadIds: string[], status: LeadStatus, tenantId: string, actorId: string) {
+    const RESTRICTED_STAGES = [
+      'DOCUMENTS_RECEIVED',
+      'UNIVERSITY_APPLIED',
+      'OFFER_LETTER',
+      'VISA_PROCESS',
+      'ADMISSION_CLOSED'
+    ];
+    if (RESTRICTED_STAGES.includes(status)) {
+      const unreadyLeads = await this.prisma.lead.findMany({
+        where: {
+          id: { in: leadIds },
+          tenantId,
+          deletedAt: null,
+          OR: [
+            { readinessScore: null },
+            { readinessScore: { lt: 100 } }
+          ]
+        },
+        select: { firstName: true, lastName: true }
+      });
+      if (unreadyLeads.length > 0) {
+        const names = unreadyLeads.map(l => `${l.firstName} ${l.lastName || ''}`.trim()).join(', ');
+        throw new BadRequestException(`Cannot update status. The following leads do not have 100% verified documents: ${names}`);
+      }
+    }
+
     // Perform bulk update
     const result = await this.prisma.lead.updateMany({
       where: {

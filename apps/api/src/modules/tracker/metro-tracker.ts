@@ -184,6 +184,9 @@ export const METRO_TRACKER_SDK = `(function() {
               fields.leadCategory = val;
             } else if (name === 'preferredcountry') {
               fields.preferredCountry = val;
+            } else if (name === 'preferredcourse') {
+              fields.preferredCourse = val;
+              fields.course = val;
             } else if (name === 'intendedintake') {
               fields.intendedIntake = val;
             } else if (name === 'planningtimeline') {
