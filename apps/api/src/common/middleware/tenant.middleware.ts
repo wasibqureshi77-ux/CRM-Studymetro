@@ -5,7 +5,7 @@ import { AuthenticatedRequest } from '../interfaces/request.interface';
 
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async use(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     // 1. Extract tenant identifier from X-Tenant-ID header, or subdomain
@@ -27,7 +27,7 @@ export class TenantMiddleware implements NestMiddleware {
 
     if (!tenantIdentifier) {
       const hostname = req.hostname;
-      // Simple subdomain check, e.g. "orgname.studymetro.com" -> "orgname"
+      // Simple subdomain check, e.g. "orgname.studymetrojaipur.com" -> "orgname"
       const parts = hostname.split('.');
       if (parts.length > 2 && parts[0] !== 'www' && parts[0] !== 'app') {
         tenantIdentifier = parts[0];

@@ -13,7 +13,29 @@ export class TrackerService {
     private readonly prisma: PrismaService,
     private readonly documentService: LeadDocumentService,
     private readonly communicationService: CommunicationService
-  ) {}
+  ) { }
+
+  private async generateNextLeadNumber() {
+    const lastLead = await this.prisma.lead.findFirst({
+      where: {
+        leadNumber: {
+          startsWith: 'SM1'
+        }
+      },
+      orderBy: {
+        leadNumber: 'desc'
+      }
+    });
+
+    if (lastLead && lastLead.leadNumber) {
+      const lastNum = parseInt(lastLead.leadNumber.replace('SM', ''), 10);
+      return `SM${lastNum + 1}`;
+    }
+
+    const totalCount = await this.prisma.lead.count();
+    const nextNum = Math.max(1001, totalCount + 1);
+    return `SM${nextNum}`;
+  }
 
   private mapCategoryToEnum(cat?: string): LeadCategory {
     if (!cat) return 'STUDY_ABROAD';
@@ -88,7 +110,7 @@ export class TrackerService {
         sourceName = 'Instagram';
       } else if (utmSrc.indexOf('google') > -1 && utmSrc.indexOf('ad') > -1) {
         sourceName = 'Google Ads';
-      } else if (ref && ref.indexOf('studymetro.com') === -1 && ref.indexOf('localhost') === -1) {
+      } else if (ref && ref.indexOf('studymetrojaipur.com') === -1 && ref.indexOf('localhost') === -1) {
         sourceName = 'Referral';
       } else if (!ref && !meta.utmSource) {
         sourceName = 'Direct';
@@ -259,7 +281,7 @@ export class TrackerService {
     // 4. Extract fields & check duplicate
     const email = dto.formFields.email;
     const phone = dto.formFields.phone;
-    
+
     let normEmail = null;
     if (email) {
       const clean = email.trim().toLowerCase();
@@ -270,7 +292,7 @@ export class TrackerService {
         normEmail = clean;
       }
     }
-    
+
     let normPhone = null;
     if (phone) {
       const clean = phone.replace(/[\s\-\(\)\[\]\{\}\+]/g, '');
@@ -508,6 +530,8 @@ export class TrackerService {
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || '';
 
+    const leadNumber = await this.generateNextLeadNumber();
+
     const newLead = await this.prisma.lead.create({
       data: {
         tenantId,
@@ -517,6 +541,7 @@ export class TrackerService {
         normalizedEmail: normEmail,
         phone: phone || null,
         normalizedPhone: normPhone,
+        leadNumber,
         visitorId: dto.visitorId,
         source: sourceVal,
         status: 'NEW_LEAD',
@@ -636,7 +661,7 @@ export class TrackerService {
           meta: { brochureId: brochure.id, brochureTitle: brochure.title, token },
         },
       });
-      const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetro.com';
+      const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetrojaipur.com';
       console.log(`[BROCHURE GENERATION] Assigned brochure "${brochure.title}" to lead ${newLead.id}. Unique link: ${appUrl}/brochure/view/${token}`);
       brochureLinkToken = token;
     }
@@ -653,7 +678,7 @@ export class TrackerService {
 
   async identifyVisitor(dto: IdentifyVisitorDto, tenantId: string) {
     const normEmail = dto.email.trim().toLowerCase().split('+')[0] + (dto.email.includes('@') ? '@' + dto.email.split('@')[1] : '');
-    
+
     // Find matching lead to establish attribution mapping
     const lead = await this.prisma.lead.findFirst({
       where: { tenantId, normalizedEmail: normEmail, deletedAt: null }

@@ -15,7 +15,7 @@ async function runVerification() {
       data: {
         id: 'system-admin-uuid',
         tenantId,
-        email: 'system-admin@studymetro.com',
+        email: 'system-admin@studymetrojaipur.com',
         firstName: 'System',
         lastName: 'Admin',
         passwordHash: 'dummy',
@@ -40,7 +40,7 @@ async function runVerification() {
       }
     });
   }
-  
+
   // Write a mock physical PDF file so GET pdf doesn't 404
   const uploadDir = path.resolve(process.cwd(), 'uploads', 'brochures');
   if (!fs.existsSync(uploadDir)) {
@@ -50,14 +50,14 @@ async function runVerification() {
   if (!fs.existsSync(physicalPdfPath)) {
     fs.writeFileSync(physicalPdfPath, 'MOCK PDF DATA');
   }
-  
+
   console.log(`   Brochure ID: ${brochure.id}, Title: ${brochure.title}`);
 
   // Clean old test leads
   console.log('\n🧹 Cleaning old test records...');
-  const testEmail = 'verify-dedup-flow@studymetro.com';
-  const testNormalizedEmail = 'verify-dedup-flow@studymetro.com';
-  
+  const testEmail = 'verify-dedup-flow@studymetrojaipur.com';
+  const testNormalizedEmail = 'verify-dedup-flow@studymetrojaipur.com';
+
   const oldLeads = await prisma.lead.findMany({
     where: {
       OR: [
@@ -93,7 +93,7 @@ async function runVerification() {
   const emailService = new EmailService(prisma);
   const commService = new CommunicationService(prisma, emailService);
   const storageProvider = new LocalStorageProvider();
-  
+
   const docService = new LeadDocumentService(prisma, notificationService, storageProvider, commService);
   const leadService = new LeadService(prisma, docService, commService);
   const brochureService = new BrochureService(prisma, storageProvider);
@@ -148,7 +148,7 @@ async function runVerification() {
   const dbLeads = await prisma.lead.findMany({
     where: { normalizedEmail: testNormalizedEmail }
   });
-  
+
   console.log(`\n📊 Lead Count in DB: ${dbLeads.length} (Expected: 1)`);
   if (dbLeads.length !== 1) {
     throw new Error(`Deduplication FAILED. Lead Count is ${dbLeads.length}`);
@@ -227,7 +227,7 @@ async function runVerification() {
   const token = assignments[0].token;
   const API_URL = 'http://localhost:4000';
   console.log(`👉 Simulating Lead opening brochure via public HTTP GET (token: ${token})...`);
-  
+
   // Test GET view
   const viewRes = await fetch(`${API_URL}/api/v1/brochure/view/${token}`);
   if (!viewRes.ok) {

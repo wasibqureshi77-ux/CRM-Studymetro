@@ -18,7 +18,7 @@ async function testVersioning() {
   console.log('🧪 Running Document Versioning & Expiry Unit Test...');
 
   const tenantId = 'studymetro-global';
-  
+
   // Find or create admin user to avoid FK errors
   let admin = await prisma.user.findFirst({ where: { tenantId } });
   if (!admin) {
@@ -26,7 +26,7 @@ async function testVersioning() {
       data: {
         id: 'system-admin-uuid',
         tenantId,
-        email: 'system-admin@studymetro.com',
+        email: 'system-admin@studymetrojaipur.com',
         firstName: 'System',
         lastName: 'Admin',
         passwordHash: 'dummy',

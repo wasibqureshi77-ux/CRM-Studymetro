@@ -18,11 +18,11 @@ async function testChecklist() {
   // Create a mock tenant, branch, and user if not exists
   const tenantId = 'studymetro-global';
   const branchId = 'london-hq';
-  
+
   // Clean or find existing
   let tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) {
-    tenant = await prisma.tenant.create({ data: { id: tenantId, name: 'Study Metro Global', domain: 'studymetro.com' } });
+    tenant = await prisma.tenant.create({ data: { id: tenantId, name: 'Study Metro Global', domain: 'studymetrojaipur.com' } });
   }
 
   // Create dummy lead

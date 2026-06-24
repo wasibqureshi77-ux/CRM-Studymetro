@@ -31,7 +31,7 @@ async function main() {
     data: {
       id: tenantId,
       name: 'Study Metro Global',
-      domain: 'studymetro.com',
+      domain: 'studymetrojaipur.com',
       isActive: true,
     },
   });
@@ -56,7 +56,7 @@ async function main() {
   const superAdmin = await prisma.user.create({
     data: {
       tenantId,
-      email: 'superadmin@studymetro.com',
+      email: 'superadmin@studymetrojaipur.com',
       passwordHash,
       firstName: 'Sarah',
       lastName: 'SuperAdmin',

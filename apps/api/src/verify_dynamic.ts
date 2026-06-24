@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 const API_URL = 'http://localhost:4000';
 
 function uuidv4() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
@@ -16,7 +16,7 @@ async function verify() {
   const testCases = [
     {
       category: 'Study Abroad',
-      email: 'verify-study-abroad@studymetro.com',
+      email: 'verify-study-abroad@studymetrojaipur.com',
       name: 'Study Abroad Tester',
       phone: '+19990000001',
       fields: {
@@ -28,7 +28,7 @@ async function verify() {
     },
     {
       category: 'IELTS',
-      email: 'verify-ielts@studymetro.com',
+      email: 'verify-ielts@studymetrojaipur.com',
       name: 'IELTS Tester',
       phone: '+19990000002',
       fields: {
@@ -39,7 +39,7 @@ async function verify() {
     },
     {
       category: 'PTE',
-      email: 'verify-pte@studymetro.com',
+      email: 'verify-pte@studymetrojaipur.com',
       name: 'PTE Tester',
       phone: '+19990000003',
       fields: {
@@ -50,7 +50,7 @@ async function verify() {
     },
     {
       category: 'English Speaking',
-      email: 'verify-english@studymetro.com',
+      email: 'verify-english@studymetrojaipur.com',
       name: 'English Tester',
       phone: '+19990000004',
       fields: {
@@ -60,7 +60,7 @@ async function verify() {
     },
     {
       category: 'Computer Course',
-      email: 'verify-computer@studymetro.com',
+      email: 'verify-computer@studymetrojaipur.com',
       name: 'Computer Tester',
       phone: '+19990000005',
       fields: {
@@ -93,11 +93,11 @@ async function verify() {
 
     const responseText = await res.text();
     console.log(`   API Response: ${responseText}`);
-    
+
     let resJson: any;
     try {
       resJson = JSON.parse(responseText);
-    } catch (e) {}
+    } catch (e) { }
 
     console.log(`   ✅ Ingested successfully. Checking database...`);
 
@@ -135,7 +135,7 @@ async function verify() {
 
     const meta = submissionActivity.meta as any;
     const formFields = meta?.formFields;
-    
+
     for (const [k, v] of Object.entries(tc.fields)) {
       if (formFields[k] !== v) {
         throw new Error(`Activity metadata validation failed. Expected formFields.${k} to be "${v}", got "${formFields[k]}"`);

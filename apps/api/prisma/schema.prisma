@@ -198,6 +198,7 @@ model Lead {
   purpose          String?
   courseInterest   String?
   readinessScore Float?
+  leadNumber     String?     @unique
 
   submissions    LeadSubmission[]
   studentProfile StudentProfile?

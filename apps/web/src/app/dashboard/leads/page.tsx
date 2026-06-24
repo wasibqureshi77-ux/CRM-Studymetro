@@ -431,7 +431,7 @@ export default function LeadsPage() {
       <section style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '0 20px 12px 20px', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
         <input
           type="text"
-          placeholder="Search Name, Phone, Email..."
+          placeholder="Search Ref ID, Name, Phone, Email..."
           className="form-control"
           style={{ width: '200px' }}
           value={q}
@@ -719,6 +719,7 @@ export default function LeadsPage() {
                       onChange={handleSelectAll}
                     />
                   </th>
+                  <th>Ref ID</th>
                   <th>Name</th>
                   <th>Progress</th>
                   <th>Phone</th>
@@ -765,6 +766,7 @@ export default function LeadsPage() {
                             onChange={(e) => handleSelectOne(lead.id, e.target.checked)}
                           />
                         </td>
+                        <td style={{ fontWeight: 600 }}>{lead.leadNumber || '—'}</td>
                         <td>
                           <a
                             href={`/dashboard/leads/${lead.id}`}

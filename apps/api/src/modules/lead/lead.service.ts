@@ -13,7 +13,7 @@ export class LeadService {
     private readonly prisma: PrismaService,
     private readonly documentService: LeadDocumentService,
     private readonly communicationService: CommunicationService
-  ) {}
+  ) { }
 
   private normalizeEmail(email?: string): string | null {
     if (!email) return null;
@@ -48,7 +48,30 @@ export class LeadService {
     }
   }
 
+  private async generateNextLeadNumber() {
+    const lastLead = await this.prisma.lead.findFirst({
+      where: {
+        leadNumber: {
+          startsWith: 'SM1'
+        }
+      },
+      orderBy: {
+        leadNumber: 'desc'
+      }
+    });
+
+    if (lastLead && lastLead.leadNumber) {
+      const lastNum = parseInt(lastLead.leadNumber.replace('SM', ''), 10);
+      return `SM${lastNum + 1}`;
+    }
+
+    const totalCount = await this.prisma.lead.count();
+    const nextNum = Math.max(1001, totalCount + 1);
+    return `SM${nextNum}`;
+  }
+
   async create(dto: CreateLeadDto, tenantId: string, actorId: string) {
+    const leadNumber = await this.generateNextLeadNumber();
     const normEmail = this.normalizeEmail(dto.email);
     const normPhone = this.normalizePhone(dto.phone);
 
@@ -177,6 +200,7 @@ export class LeadService {
         normalizedEmail: normEmail,
         phone: dto.phone,
         normalizedPhone: normPhone,
+        leadNumber,
         source: dto.source,
         status: LeadStatus.NEW_LEAD,
         submissionCount: 1,
@@ -281,7 +305,7 @@ export class LeadService {
           meta: { brochureId: brochure.id, brochureTitle: brochure.title, token },
         },
       });
-      const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetro.com';
+      const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetrojaipur.com';
       console.log(`[BROCHURE GENERATION] Assigned brochure "${brochure.title}" to lead ${lead.id}. Unique link: ${appUrl}/brochure/view/${token}`);
       brochureLinkToken = token;
     }
@@ -321,7 +345,7 @@ export class LeadService {
   ) {
     const searchConditions: any[] = [];
 
-    // 1. Text Search matching on Name, Email, or Phone
+    // 1. Text Search matching on Name, Email, Phone, or Lead Number
     if (filters.q) {
       const cleanQuery = filters.q.trim();
       searchConditions.push({
@@ -330,6 +354,7 @@ export class LeadService {
           { lastName: { contains: cleanQuery, mode: 'insensitive' } },
           { email: { contains: cleanQuery, mode: 'insensitive' } },
           { phone: { contains: cleanQuery } },
+          { leadNumber: { contains: cleanQuery, mode: 'insensitive' } },
         ],
       });
     }

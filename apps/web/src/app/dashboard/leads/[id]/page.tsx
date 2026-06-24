@@ -786,7 +786,7 @@ export default function LeadDetailPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h3 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>
-              {lead.firstName} {lead.lastName}
+              {lead.firstName} {lead.lastName} {lead.leadNumber ? `(Ref: ${lead.leadNumber})` : ''}
             </h3>
             <span style={{
               fontSize: '10px',

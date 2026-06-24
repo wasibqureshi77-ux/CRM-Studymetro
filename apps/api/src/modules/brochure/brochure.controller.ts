@@ -30,7 +30,7 @@ const UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads');
 
 @Controller('api/v1/brochures')
 export class BrochureController {
-  constructor(private readonly brochureService: BrochureService) {}
+  constructor(private readonly brochureService: BrochureService) { }
 
   // ================= ADMIN ENDPOINTS =================
 
@@ -124,7 +124,7 @@ export class BrochureController {
   @Get('public/pdf/:token')
   async publicGetPdf(@Param('token') token: string, @Res() res: Response) {
     const assignment = await this.brochureService.getAssignmentByToken(token);
-    
+
     const resolvedPath = path.resolve(UPLOAD_ROOT, assignment.brochure.filePath);
     if (!fs.existsSync(resolvedPath)) {
       throw new NotFoundException('Physical PDF brochure file not found');
@@ -132,7 +132,7 @@ export class BrochureController {
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(assignment.brochure.title)}.pdf"`);
-    
+
     const stream = fs.createReadStream(resolvedPath);
     stream.pipe(res);
   }
@@ -151,11 +151,14 @@ export class BrochureController {
 
 @Controller('api/v1/brochure')
 export class PublicBrochureController {
-  constructor(private readonly brochureService: BrochureService) {}
+  constructor(private readonly brochureService: BrochureService) { }
 
   @Get('view/:trackingId')
   async publicGetAssignment(@Param('trackingId') trackingId: string) {
+    console.log(`[DEBUG] Token received in view: ${trackingId}`);
     const assignment = await this.brochureService.getAssignmentByToken(trackingId);
+    console.log(`[DEBUG] Lead resolved: ${assignment.lead ? assignment.lead.id : 'None'}`);
+    console.log(`[DEBUG] Brochure resolved: ${assignment.brochure ? assignment.brochure.id : 'None'}`);
     return {
       id: assignment.id,
       token: assignment.token,
@@ -178,16 +181,22 @@ export class PublicBrochureController {
 
   @Get('pdf/:trackingId')
   async publicGetPdf(@Param('trackingId') trackingId: string, @Res() res: Response) {
+    console.log(`[DEBUG] Token received in pdf stream: ${trackingId}`);
     const assignment = await this.brochureService.getAssignmentByToken(trackingId);
-    
+
     const resolvedPath = path.resolve(UPLOAD_ROOT, assignment.brochure.filePath);
-    if (!fs.existsSync(resolvedPath)) {
+    console.log(`[DEBUG] PDF path resolved: ${resolvedPath}`);
+    const exists = fs.existsSync(resolvedPath);
+    console.log(`[DEBUG] PDF fetch result - file exists: ${exists}`);
+    console.log(`[DEBUG] PDF page count: ${assignment.brochure ? assignment.brochure.totalPages : 0}`);
+
+    if (!exists) {
       throw new NotFoundException('Physical PDF brochure file not found');
     }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(assignment.brochure.title)}.pdf"`);
-    
+
     const stream = fs.createReadStream(resolvedPath);
     stream.pipe(res);
   }
@@ -207,6 +216,36 @@ export class PublicBrochureController {
       return {
         success: false,
         message: 'Tracking temporarily offline, reading is permitted.',
+        error: err.message
+      };
+    }
+  }
+
+  @Get('debug/:token')
+  async publicDebugToken(@Param('token') token: string) {
+    try {
+      const assignment = await this.brochureService.getAssignmentByToken(token);
+      const resolvedPath = path.resolve(UPLOAD_ROOT, assignment.brochure.filePath);
+      const fileExists = fs.existsSync(resolvedPath);
+      const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetro.com';
+      return {
+        token,
+        leadFound: !!assignment.lead,
+        brochureFound: !!assignment.brochure,
+        brochureId: assignment.brochureId,
+        pdfPath: assignment.brochure.filePath,
+        publicUrl: `${appUrl}/brochure/view/${token}`,
+        fileExists
+      };
+    } catch (err: any) {
+      return {
+        token,
+        leadFound: false,
+        brochureFound: false,
+        brochureId: null,
+        pdfPath: null,
+        publicUrl: null,
+        fileExists: false,
         error: err.message
       };
     }

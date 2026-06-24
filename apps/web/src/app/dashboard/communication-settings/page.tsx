@@ -19,7 +19,7 @@ export default function CommunicationSettingsPage() {
   const [sendingTest, setSendingTest] = useState(false);
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
   const [testRecipient, setTestRecipient] = useState('');
-  
+
   const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
 
   const addToast = (type: 'success' | 'error', message: string) => {
@@ -143,7 +143,7 @@ export default function CommunicationSettingsPage() {
 
       <div style={{ backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '24px' }}>
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          
+
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
             <div className="form-group" style={{ margin: 0 }}>
               <label>SMTP Host Server Address</label>
@@ -176,7 +176,7 @@ export default function CommunicationSettingsPage() {
               <input
                 type="email"
                 className="form-control"
-                placeholder="e.g. info@studymetro.com"
+                placeholder="e.g. info@studymetrojaipur.com"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
@@ -202,7 +202,7 @@ export default function CommunicationSettingsPage() {
               <input
                 type="email"
                 className="form-control"
-                placeholder="e.g. info@studymetro.com"
+                placeholder="e.g. info@studymetrojaipur.com"
                 value={senderEmail}
                 onChange={(e) => setSenderEmail(e.target.value)}
                 required
@@ -286,7 +286,7 @@ export default function CommunicationSettingsPage() {
                 <input
                   type="email"
                   className="form-control"
-                  placeholder="e.g. developer@studymetro.com"
+                  placeholder="e.g. developer@studymetrojaipur.com"
                   value={testRecipient}
                   onChange={(e) => setTestRecipient(e.target.value)}
                   required

@@ -11,7 +11,7 @@ export class CommunicationService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService
-  ) {}
+  ) { }
 
   async onModuleInit() {
     console.log('📡 Communication Service initialized. Seeding templates...');
@@ -31,140 +31,140 @@ export class CommunicationService implements OnModuleInit {
         name: 'WELCOME',
         channel: CommunicationChannel.EMAIL,
         subject: 'Welcome to Study Metro!',
-        content: 'Dear {{name}},\n\nWelcome to Study Metro! We are thrilled to help you on your educational journey. Your lead ID is {{leadId}}.\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Welcome to <strong>Study Metro</strong>! We are thrilled to help you on your educational journey.</p><p>Your lead ID is <strong>{{leadId}}</strong>.</p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nWelcome to Study Metro! We are thrilled to help you on your educational journey.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>Welcome to <strong>Study Metro</strong>! We are thrilled to help you on your educational journey.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'WELCOME',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, welcome to Study Metro! We are excited to guide you through your study abroad journey. Lead ID: {{leadId}}.',
+        content: 'Hello {{name}}, welcome to Study Metro! We are excited to guide you through your study abroad journey. Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'BROCHURE',
         channel: CommunicationChannel.EMAIL,
         subject: 'Your Study Metro Brochure',
-        content: 'Dear {{name}},\n\nThank you for choosing Study Metro! Here is your brochure link: {{brochureLink}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Thank you for choosing <strong>Study Metro</strong>!</p><p>Here is your brochure link: <a href="{{brochureLink}}">View Brochure</a></p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nThank you for choosing Study Metro! Here is your brochure link: {{brochureLink}}\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>Thank you for choosing <strong>Study Metro</strong>!</p><p>Here is your brochure link: <a href="{{brochureLink}}">View Brochure</a></p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'BROCHURE',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, thank you for choosing Study Metro! Here is your brochure link: {{brochureLink}}',
+        content: 'Hello {{name}}, thank you for choosing Study Metro! Here is your brochure link: {{brochureLink}}. Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'DOCUMENT_REQUEST',
         channel: CommunicationChannel.EMAIL,
         subject: 'Documents Required for Application',
-        content: 'Dear {{name}},\n\nPlease upload the following documents to proceed with your application:\n{{documentList}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Please upload the following documents to proceed with your application:</p><pre>{{documentList}}</pre><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nPlease upload the following documents to proceed with your application:\n{{documentList}}\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>Please upload the following documents to proceed with your application:</p><pre>{{documentList}}</pre><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'DOCUMENT_REQUEST',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, please upload the required documents to proceed: {{documentList}}.',
+        content: 'Hello {{name}}, please upload the required documents to proceed: {{documentList}}. Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'FOLLOWUP_REMINDER',
         channel: CommunicationChannel.EMAIL,
         subject: 'Followup Reminder',
-        content: 'Dear {{name}},\n\nThis is a friendly reminder that you have a scheduled followup on {{followupDate}} with counsellor {{counsellor}}.\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>This is a friendly reminder that you have a scheduled followup on <strong>{{followupDate}}</strong> with counsellor <strong>{{counsellor}}</strong>.</p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nThis is a friendly reminder that you have a scheduled followup on {{followupDate}} with counsellor {{counsellor}}.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>This is a friendly reminder that you have a scheduled followup on <strong>{{followupDate}}</strong> with counsellor <strong>{{counsellor}}</strong>.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'FOLLOWUP_REMINDER',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, reminder of your followup on {{followupDate}} with counsellor {{counsellor}}.',
+        content: 'Hello {{name}}, reminder of your followup on {{followupDate}} with counsellor {{counsellor}}. Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'APPLICATION_SUBMITTED',
         channel: CommunicationChannel.EMAIL,
         subject: 'Application Submitted Successfully',
-        content: 'Dear {{name}},\n\nYour application for course {{course}} in {{country}} has been successfully submitted.\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Your application for course <strong>{{course}}</strong> in <strong>{{country}}</strong> has been successfully submitted.</p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nYour application for course {{course}} in {{country}} has been successfully submitted.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>Your application for course <strong>{{course}}</strong> in <strong>{{country}}</strong> has been successfully submitted.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'APPLICATION_SUBMITTED',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, your application for {{course}} in {{country}} has been submitted successfully.',
+        content: 'Hello {{name}}, your application for {{course}} in {{country}} has been submitted successfully. Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'OFFER_RECEIVED',
         channel: CommunicationChannel.EMAIL,
         subject: 'Offer Letter Received!',
-        content: 'Dear {{name}},\n\nCongratulations! We have received an offer letter for your application to {{course}} in {{country}}.\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p><strong>Congratulations!</strong> We have received an offer letter for your application to <strong>{{course}}</strong> in <strong>{{country}}</strong>.</p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nCongratulations! We have received an offer letter for your application to {{course}} in {{country}}.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p><strong>Congratulations!</strong> We have received an offer letter for your application to <strong>{{course}}</strong> in <strong>{{country}}</strong>.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'OFFER_RECEIVED',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, congratulations! Offer letter received for {{course}} in {{country}}.',
+        content: 'Hello {{name}}, congratulations! Offer letter received for {{course}} in {{country}}. Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'OFFER_ACCEPTED',
         channel: CommunicationChannel.EMAIL,
         subject: 'Offer Accepted',
-        content: 'Dear {{name}},\n\nYou have accepted the offer for {{course}} in {{country}}. We will begin the visa process next.\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>You have accepted the offer for <strong>{{course}}</strong> in <strong>{{country}}</strong>. We will begin the visa process next.</p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nYou have accepted the offer for {{course}} in {{country}}. We will begin the visa process next.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>You have accepted the offer for <strong>{{course}}</strong> in <strong>{{country}}</strong>. We will begin the visa process next.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'OFFER_ACCEPTED',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, offer accepted for {{course}} in {{country}}. We are starting your visa process.',
+        content: 'Hello {{name}}, offer accepted for {{course}} in {{country}}. We are starting your visa process. Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'VISA_APPLIED',
         channel: CommunicationChannel.EMAIL,
         subject: 'Visa Application Submitted',
-        content: 'Dear {{name}},\n\nYour visa application for {{country}} has been submitted.\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Your visa application for <strong>{{country}}</strong> has been submitted.</p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nYour visa application for {{country}} has been submitted.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>Your visa application for <strong>{{country}}</strong> has been submitted.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'VISA_APPLIED',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, your visa application for {{country}} has been submitted.',
+        content: 'Hello {{name}}, your visa application for {{country}} has been submitted. Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'VISA_APPROVED',
         channel: CommunicationChannel.EMAIL,
         subject: 'Visa Approved!',
-        content: 'Dear {{name}},\n\nFantastic news! Your visa for {{country}} has been approved!\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p><strong>Fantastic news!</strong> Your visa for <strong>{{country}}</strong> has been approved!</p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nFantastic news! Your visa for {{country}} has been approved!\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p><strong>Fantastic news!</strong> Your visa for <strong>{{country}}</strong> has been approved!</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'VISA_APPROVED',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, fantastic news! Your visa for {{country}} has been approved! 🎉',
+        content: 'Hello {{name}}, fantastic news! Your visa for {{country}} has been approved! 🎉 Reference ID: {{leadNumber}}',
         htmlContent: null
       },
       {
         name: 'ENROLLMENT_COMPLETE',
         channel: CommunicationChannel.EMAIL,
         subject: 'Enrollment Completed',
-        content: 'Dear {{name}},\n\nYour enrollment process is now complete. Congratulations on starting your journey in {{country}}!\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Your enrollment process is now complete. <strong>Congratulations</strong> on starting your journey in <strong>{{country}}</strong>!</p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        content: 'Dear {{name}},\n\nYour enrollment process is now complete. Congratulations on starting your journey in {{country}}!\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>Your enrollment process is now complete. <strong>Congratulations</strong> on starting your journey in <strong>{{country}}</strong>!</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
       },
       {
         name: 'ENROLLMENT_COMPLETE',
         channel: CommunicationChannel.WHATSAPP,
         subject: '',
-        content: 'Hello {{name}}, your enrollment is complete! Congratulations on starting your journey in {{country}}! 🎓',
+        content: 'Hello {{name}}, your enrollment is complete! Congratulations on starting your journey in {{country}}! 🎓 Reference ID: {{leadNumber}}',
         htmlContent: null
       },
     ];
@@ -292,7 +292,7 @@ export class CommunicationService implements OnModuleInit {
             ? `${lead.assignee.firstName || ''} ${lead.assignee.lastName || ''}`.trim()
             : payload.counsellor || 'Assigned Counsellor';
 
-          const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetro.com';
+          const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetrojaipur.com';
           const brochureLink = payload.brochureLink ? `${appUrl}/brochure/view/${payload.brochureLink}` : '';
           if (payload.brochureLink) {
             console.log(`[BROCHURE LINK GENERATION] Enqueued email contains brochure URL: ${brochureLink}`);
@@ -302,6 +302,7 @@ export class CommunicationService implements OnModuleInit {
           let textMessage = template.content;
           textMessage = textMessage.replace(/\{\{name\}\}/g, name);
           textMessage = textMessage.replace(/\{\{leadId\}\}/g, lead.id);
+          textMessage = textMessage.replace(/\{\{leadNumber\}\}/g, lead.leadNumber || lead.id);
           textMessage = textMessage.replace(/\{\{documentList\}\}/g, documentList);
           textMessage = textMessage.replace(/\{\{followupDate\}\}/g, followupDate);
           textMessage = textMessage.replace(/\{\{country\}\}/g, country);
@@ -315,6 +316,7 @@ export class CommunicationService implements OnModuleInit {
             htmlMessage = template.htmlContent;
             htmlMessage = htmlMessage.replace(/\{\{name\}\}/g, name);
             htmlMessage = htmlMessage.replace(/\{\{leadId\}\}/g, lead.id);
+            htmlMessage = htmlMessage.replace(/\{\{leadNumber\}\}/g, lead.leadNumber || lead.id);
             htmlMessage = htmlMessage.replace(/\{\{documentList\}\}/g, documentList.replace(/\n/g, '<br/>'));
             htmlMessage = htmlMessage.replace(/\{\{followupDate\}\}/g, followupDate);
             htmlMessage = htmlMessage.replace(/\{\{country\}\}/g, country);

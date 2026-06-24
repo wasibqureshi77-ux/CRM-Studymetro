@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 const API_URL = 'http://localhost:4000';
 
 function uuidv4() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
@@ -20,7 +20,7 @@ async function verify() {
     throw new Error(`Failed to load SDK script: ${sdkRes.status} - ${await sdkRes.text()}`);
   }
   const sdkJs = await sdkRes.text();
-  
+
   const checks = {
     interceptionKeywords: sdkJs.includes('matchesContact') && sdkJs.includes('matchesConsult') && sdkJs.includes('matchesAdmission') && sdkJs.includes('matchesLead'),
     metroCaptureAttr: sdkJs.includes('data-metro-capture'),
@@ -28,16 +28,16 @@ async function verify() {
     utmAndReferrer: sdkJs.includes('utmSource') && sdkJs.includes('referrer'),
     noDirectFormName: !sdkJs.includes('form.name.toLowerCase') && !sdkJs.includes('(form.name || "").toLowerCase'),
     safeMetadataExtraction: sdkJs.includes("String(form.id || '')") &&
-                            sdkJs.includes("String(form.className || '')") &&
-                            sdkJs.includes("String(form.getAttribute('name') || '')") &&
-                            sdkJs.includes("String(form.getAttribute('action') || '')"),
+      sdkJs.includes("String(form.className || '')") &&
+      sdkJs.includes("String(form.getAttribute('name') || '')") &&
+      sdkJs.includes("String(form.getAttribute('action') || '')"),
     defensiveGuards: sdkJs.includes('try {') && sdkJs.includes('catch (e)')
   };
-  
+
   if (
-    checks.interceptionKeywords && 
-    checks.metroCaptureAttr && 
-    checks.targetFields && 
+    checks.interceptionKeywords &&
+    checks.metroCaptureAttr &&
+    checks.targetFields &&
     checks.utmAndReferrer &&
     checks.noDirectFormName &&
     checks.safeMetadataExtraction &&
@@ -82,11 +82,11 @@ async function verify() {
 
   // 4. Submit same form 3 times to test deduplication & history
   console.log('\n⏳ 4. Submitting form 3 times with same email/phone...');
-  
+
   const formPayloads = [
     {
       name: 'Deduplication Test Lead',
-      email: 'dedup-verify@studymetro.com',
+      email: 'dedup-verify@studymetrojaipur.com',
       phone: '+99999999999',
       country: 'United Kingdom',
       course: 'MSc Data Science',
@@ -94,7 +94,7 @@ async function verify() {
     },
     {
       name: 'Deduplication Test Lead',
-      email: 'dedup-verify@studymetro.com',
+      email: 'dedup-verify@studymetrojaipur.com',
       phone: '+99999999999',
       country: 'Canada',
       course: 'MBA',
@@ -102,7 +102,7 @@ async function verify() {
     },
     {
       name: 'Deduplication Test Lead',
-      email: 'dedup-verify@studymetro.com',
+      email: 'dedup-verify@studymetrojaipur.com',
       phone: '+99999999999',
       country: 'Australia',
       course: 'Information Technology',
@@ -134,14 +134,14 @@ async function verify() {
 
   // 5. DB Verification
   console.log('\n⏳ 5. Verifying database records for deduplication & submission history...');
-  
+
   // A. Check that only ONE lead was created for the email
   const leadsCount = await prisma.lead.count({
-    where: { email: 'dedup-verify@studymetro.com', deletedAt: null }
+    where: { email: 'dedup-verify@studymetrojaipur.com', deletedAt: null }
   });
 
   const lead = await prisma.lead.findFirst({
-    where: { email: 'dedup-verify@studymetro.com', deletedAt: null },
+    where: { email: 'dedup-verify@studymetrojaipur.com', deletedAt: null },
     include: { studentProfile: true, activities: true, submissions: { orderBy: { createdAt: 'desc' } } }
   });
 
@@ -151,18 +151,18 @@ async function verify() {
     oneRecordOnly: leadsCount === 1,
     submissionCountIs3: lead.submissionCount === 3,
     profileMatchesLatest: lead.studentProfile?.targetCountry === 'Australia' &&
-                          lead.studentProfile?.targetCourse === 'Information Technology' &&
-                          lead.studentProfile?.intake === 'February 2027',
+      lead.studentProfile?.targetCourse === 'Information Technology' &&
+      lead.studentProfile?.intake === 'February 2027',
     hasThreeSubmissions: lead.submissions.length === 3,
     latestSubmissionIsFirst: lead.submissions[0].country === 'Australia' &&
-                             lead.submissions[0].course === 'Information Technology' &&
-                             lead.submissions[0].intake === 'February 2027',
+      lead.submissions[0].course === 'Information Technology' &&
+      lead.submissions[0].intake === 'February 2027',
     middleSubmissionIsSecond: lead.submissions[1].country === 'Canada' &&
-                              lead.submissions[1].course === 'MBA' &&
-                              lead.submissions[1].intake === 'January 2027',
+      lead.submissions[1].course === 'MBA' &&
+      lead.submissions[1].intake === 'January 2027',
     oldestSubmissionIsThird: lead.submissions[2].country === 'United Kingdom' &&
-                             lead.submissions[2].course === 'MSc Data Science' &&
-                             lead.submissions[2].intake === 'September 2026'
+      lead.submissions[2].course === 'MSc Data Science' &&
+      lead.submissions[2].intake === 'September 2026'
   };
 
   // Timeline check (activities and timeline API simulation)
@@ -186,9 +186,9 @@ async function verify() {
   printCheck('Submission #1 matches first submission values', leadChecks.oldestSubmissionIsThird);
   printCheck('Chronological form submissions tracked in activities', timelineChecks.formSubmissionsLogged);
   console.log('=============================================================');
-  
-  const allPassed = Object.values(leadChecks).every(Boolean) && 
-                    Object.values(timelineChecks).every(Boolean);
+
+  const allPassed = Object.values(leadChecks).every(Boolean) &&
+    Object.values(timelineChecks).every(Boolean);
 
   if (allPassed) {
     console.log('\n🏆 DEDUPLICATION VERIFICATION: ALL END-TO-END FLOW CHECKS PASSED!');

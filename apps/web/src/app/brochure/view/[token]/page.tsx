@@ -28,7 +28,7 @@ export default function PublicBrochureViewerPage() {
     const initViewer = async () => {
       try {
         setLoading(true);
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
         
         // Fetch assignment metadata
         const res = await fetch(`${apiBase}/api/v1/brochure/view/${token}`);
@@ -71,6 +71,8 @@ export default function PublicBrochureViewerPage() {
         let msg = 'Failed to load brochure document.';
         if (err.message && err.message.includes('Failed to fetch')) {
           msg = 'Server Connection Error: Could not connect to the brochure service.';
+        } else if (err.message && (err.message.includes('404') || err.message.includes('Missing PDF') || err.message.includes('not found') || err.message.includes('UnknownErrorException'))) {
+          msg = 'Brochure file is missing on the server. Please contact support.';
         } else if (err.message) {
           msg = err.message;
         }
@@ -89,11 +91,11 @@ export default function PublicBrochureViewerPage() {
     };
   }, [token]);
 
-  // Render PDF page whenever pageNum, scale, or pdf changes
+  // Render PDF page whenever pageNum, scale, pdf, or loading changes
   useEffect(() => {
-    if (!pdf) return;
+    if (!pdf || loading) return;
     renderPage(pageNum);
-  }, [pdf, pageNum, scale]);
+  }, [pdf, pageNum, scale, loading]);
 
   const loadPdfJsCDN = (): Promise<void> => {
     return new Promise((resolve, reject) => {
@@ -151,7 +153,7 @@ export default function PublicBrochureViewerPage() {
 
   const trackEvent = async (eventType: 'OPEN' | 'PAGE_VIEW' | 'HEARTBEAT' | 'DOWNLOAD', payload?: any) => {
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       await fetch(`${apiBase}/api/v1/brochure/event/${token}`, {
         method: 'POST',
         headers: {
@@ -188,7 +190,7 @@ export default function PublicBrochureViewerPage() {
 
   const handleDownload = async () => {
     await trackEvent('DOWNLOAD');
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
     const link = document.createElement('a');
     link.href = `${apiBase}/api/v1/brochure/pdf/${token}`;
     link.download = meta?.brochure?.title ? `${meta.brochure.title}.pdf` : 'Brochure.pdf';

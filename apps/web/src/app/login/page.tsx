@@ -69,7 +69,7 @@ export default function LoginPage() {
               id="email"
               type="email"
               className="form-control"
-              placeholder="name@studymetro.com"
+              placeholder="name@studymetrojaipur.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={submitting}

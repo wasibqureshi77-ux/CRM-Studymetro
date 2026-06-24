@@ -10,9 +10,9 @@ async function bootstrap() {
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:3001',
-    'https://crm.studymetro.com',
-    'https://api.studymetro.com',
-    'https://studymetro.com',
+    'https://crm.studymetrojaipur.com',
+    'https://api.studymetrojaipur.com',
+    'https://studymetrojaipur.com',
   ];
   if (process.env.CORS_ALLOWED_ORIGINS) {
     allowedOrigins.push(...process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim()));
