@@ -203,10 +203,16 @@ export class BrochureService {
 
           // Log timeline events for milestones
           // check if we already logged them for this assignment
-          const loggedTypes = await this.prisma.activity.findMany({
-            where: { leadId: assignment.leadId, meta: { path: ['brochureId'], equals: assignment.brochureId } },
-            select: { type: true },
-          }).then(list => list.map(item => item.type));
+          const activities = await this.prisma.activity.findMany({
+            where: { leadId: assignment.leadId },
+            select: { type: true, meta: true }
+          });
+          const loggedTypes = activities
+            .filter(item => {
+              const metaObj = item.meta as any;
+              return metaObj && metaObj.brochureId === assignment.brochureId;
+            })
+            .map(item => item.type);
 
           if (completionPercentage >= 25 && !loggedTypes.includes('BROCHURE_VIEWED_25')) {
             await this.prisma.activity.create({

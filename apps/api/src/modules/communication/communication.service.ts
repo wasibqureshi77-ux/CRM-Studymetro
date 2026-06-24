@@ -42,6 +42,20 @@ export class CommunicationService implements OnModuleInit {
         htmlContent: null
       },
       {
+        name: 'BROCHURE',
+        channel: CommunicationChannel.EMAIL,
+        subject: 'Your Study Metro Brochure',
+        content: 'Dear {{name}},\n\nThank you for choosing Study Metro! Here is your brochure link: {{brochureLink}}\n\nBest regards,\nStudy Metro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>Thank you for choosing <strong>Study Metro</strong>!</p><p>Here is your brochure link: <a href="{{brochureLink}}">View Brochure</a></p><br/><p>Best regards,<br/>Study Metro Team</p>'
+      },
+      {
+        name: 'BROCHURE',
+        channel: CommunicationChannel.WHATSAPP,
+        subject: '',
+        content: 'Hello {{name}}, thank you for choosing Study Metro! Here is your brochure link: {{brochureLink}}',
+        htmlContent: null
+      },
+      {
         name: 'DOCUMENT_REQUEST',
         channel: CommunicationChannel.EMAIL,
         subject: 'Documents Required for Application',
@@ -253,6 +267,8 @@ export class CommunicationService implements OnModuleInit {
             ? `${lead.assignee.firstName || ''} ${lead.assignee.lastName || ''}`.trim()
             : payload.counsellor || 'Assigned Counsellor';
 
+          const brochureLink = payload.brochureLink ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/brochure/view/${payload.brochureLink}` : '';
+
           // Resolve plain content variables
           let textMessage = template.content;
           textMessage = textMessage.replace(/\{\{name\}\}/g, name);
@@ -262,6 +278,7 @@ export class CommunicationService implements OnModuleInit {
           textMessage = textMessage.replace(/\{\{country\}\}/g, country);
           textMessage = textMessage.replace(/\{\{course\}\}/g, course);
           textMessage = textMessage.replace(/\{\{counsellor\}\}/g, counsellor);
+          textMessage = textMessage.replace(/\{\{brochureLink\}\}/g, brochureLink);
 
           // Resolve HTML content variables if email and htmlContent exists
           let htmlMessage = '';
@@ -274,6 +291,7 @@ export class CommunicationService implements OnModuleInit {
             htmlMessage = htmlMessage.replace(/\{\{country\}\}/g, country);
             htmlMessage = htmlMessage.replace(/\{\{course\}\}/g, course);
             htmlMessage = htmlMessage.replace(/\{\{counsellor\}\}/g, counsellor);
+            htmlMessage = htmlMessage.replace(/\{\{brochureLink\}\}/g, brochureLink);
           }
 
           const recipient = item.channel === CommunicationChannel.EMAIL ? lead.email : lead.phone;

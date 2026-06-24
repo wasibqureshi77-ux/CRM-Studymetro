@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto, AssignLeadDto, CreateNoteDto } from './dto/lead.dto';
 import { LeadStatus, LeadSource, LeadCategory, CommunicationChannel } from '@prisma/client';
+import * as crypto from 'crypto';
 
 import { LeadDocumentService } from '../document/lead-document.service';
 import { CommunicationService } from '../communication/communication.service';
@@ -25,8 +26,12 @@ export class LeadService {
 
   private normalizePhone(phone?: string): string | null {
     if (!phone) return null;
-    const digits = phone.replace(/\D/g, '');
-    return digits ? `+${digits}` : null;
+    const clean = phone.replace(/[\s\-\(\)\[\]\{\}\+]/g, '');
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length >= 10) {
+      return digits.slice(-10);
+    }
+    return digits || null;
   }
 
   private mapCategoryToEnum(cat?: string): LeadCategory {
@@ -47,35 +52,110 @@ export class LeadService {
     const normEmail = this.normalizeEmail(dto.email);
     const normPhone = this.normalizePhone(dto.phone);
 
-    if (normEmail || normPhone) {
-      const match = await this.prisma.lead.findFirst({
+    let match = null;
+    if (normEmail) {
+      match = await this.prisma.lead.findFirst({
         where: {
           tenantId,
           deletedAt: null,
-          OR: [
-            normEmail ? { normalizedEmail: normEmail } : undefined,
-            normPhone ? { normalizedPhone: normPhone } : undefined
-          ].filter(Boolean) as any
+          normalizedEmail: normEmail
+        }
+      });
+    }
+
+    if (!match && normPhone) {
+      match = await this.prisma.lead.findFirst({
+        where: {
+          tenantId,
+          deletedAt: null,
+          normalizedPhone: normPhone
+        }
+      });
+    }
+
+    const category = this.mapCategoryToEnum(dto.leadCategory);
+    const prefCountry = dto.preferredCountry || dto.studentProfile?.targetCountry;
+    const intIntake = dto.intendedIntake || dto.studentProfile?.intake;
+    const targetCourse = dto.leadCategory || dto.studentProfile?.targetCourse;
+
+    if (match) {
+      const updated = await this.prisma.lead.update({
+        where: { id: match.id },
+        data: {
+          submissionCount: { increment: 1 },
+          firstName: dto.firstName !== undefined ? dto.firstName : undefined,
+          lastName: dto.lastName !== undefined ? dto.lastName : undefined,
+          email: dto.email !== undefined ? dto.email : undefined,
+          normalizedEmail: normEmail || undefined,
+          phone: dto.phone !== undefined ? dto.phone : undefined,
+          normalizedPhone: normPhone || undefined,
+          leadCategory: category,
+          preferredCountry: prefCountry !== undefined ? prefCountry : undefined,
+          planningTimeline: dto.planningTimeline !== undefined ? dto.planningTimeline : undefined,
+          intendedIntake: intIntake !== undefined ? intIntake : undefined,
+          englishLevel: dto.englishLevel !== undefined ? dto.englishLevel : undefined,
+          targetScore: dto.targetScore !== undefined ? dto.targetScore : undefined,
+          purpose: dto.purpose !== undefined ? dto.purpose : undefined,
+          courseInterest: dto.courseInterest !== undefined ? dto.courseInterest : undefined,
+          studentProfile: {
+            upsert: {
+              create: {
+                targetCountry: prefCountry || null,
+                targetCourse: targetCourse || null,
+                intake: intIntake || null,
+                ieltsStatus: dto.studentProfile?.ieltsStatus || 'NOT_TAKEN',
+                passportStatus: dto.studentProfile?.passportStatus || 'NO_PASSPORT',
+                educationLevel: dto.studentProfile?.educationLevel || null,
+                percentageGpa: dto.studentProfile?.percentageGpa || null,
+                budget: dto.studentProfile?.budget || null,
+                currentQualification: dto.studentProfile?.currentQualification || null
+              },
+              update: {
+                targetCountry: prefCountry !== undefined ? prefCountry : undefined,
+                targetCourse: targetCourse !== undefined ? targetCourse : undefined,
+                intake: intIntake !== undefined ? intIntake : undefined,
+                ieltsStatus: dto.studentProfile?.ieltsStatus,
+                passportStatus: dto.studentProfile?.passportStatus,
+                educationLevel: dto.studentProfile?.educationLevel,
+                percentageGpa: dto.studentProfile?.percentageGpa,
+                budget: dto.studentProfile?.budget,
+                currentQualification: dto.studentProfile?.currentQualification
+              }
+            }
+          }
+        },
+        include: { studentProfile: true }
+      });
+
+      await this.prisma.leadSubmission.create({
+        data: {
+          leadId: match.id,
+          country: prefCountry || null,
+          course: targetCourse || null,
+          intake: intIntake || null,
+          source: dto.source || match.source,
+          preferredCountry: prefCountry || null,
+          preferredCourse: targetCourse || null,
+          intendedIntake: intIntake || null,
+          planningTimeline: dto.planningTimeline || null,
+          englishLevel: dto.englishLevel || null,
+          targetScore: dto.targetScore || null,
+          purpose: dto.purpose || null,
+          courseInterest: dto.courseInterest || null
         }
       });
 
-      if (match) {
-        await this.prisma.lead.update({
-          where: { id: match.id },
-          data: { submissionCount: { increment: 1 } }
-        });
+      await this.prisma.activity.create({
+        data: {
+          leadId: match.id,
+          actorId,
+          type: 'INGRESS_MATCH',
+          description: 'Duplicate lead match detected during ingestion.',
+          meta: { attemptedSource: dto.source },
+        }
+      });
 
-        await this.prisma.activity.create({
-          data: {
-            leadId: match.id,
-            actorId,
-            type: 'INGRESS_MATCH',
-            description: 'Duplicate lead match detected during ingestion.',
-            meta: { attemptedSource: dto.source },
-          }
-        });
-        return match;
-      }
+      return updated;
     }
 
     if (dto.branchId) {
@@ -86,11 +166,6 @@ export class LeadService {
         throw new BadRequestException('Branch not found under tenant');
       }
     }
-
-    const category = this.mapCategoryToEnum(dto.leadCategory);
-    const prefCountry = dto.preferredCountry || dto.studentProfile?.targetCountry;
-    const intIntake = dto.intendedIntake || dto.studentProfile?.intake;
-    const targetCourse = dto.leadCategory || dto.studentProfile?.targetCourse;
 
     const lead = await this.prisma.lead.create({
       data: {
@@ -125,6 +200,22 @@ export class LeadService {
             budget: dto.studentProfile?.budget || null,
             currentQualification: dto.studentProfile?.currentQualification || null
           }
+        },
+        submissions: {
+          create: {
+            country: prefCountry || null,
+            course: targetCourse || null,
+            intake: intIntake || null,
+            source: dto.source,
+            preferredCountry: prefCountry || null,
+            preferredCourse: targetCourse || null,
+            intendedIntake: intIntake || null,
+            planningTimeline: dto.planningTimeline || null,
+            englishLevel: dto.englishLevel || null,
+            targetScore: dto.targetScore || null,
+            purpose: dto.purpose || null,
+            courseInterest: dto.courseInterest || null
+          }
         }
       },
       include: { studentProfile: true }
@@ -153,9 +244,54 @@ export class LeadService {
       }
     });
 
+    // Find and assign active brochure if matches category
+    const brochure = await this.prisma.brochure.findFirst({
+      where: { category: lead.leadCategory, isActive: true },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    let brochureLinkToken = '';
+    if (brochure) {
+      const token = crypto.randomBytes(24).toString('hex');
+      await this.prisma.brochureAssignment.create({
+        data: {
+          leadId: lead.id,
+          brochureId: brochure.id,
+          token,
+          tracking: {
+            create: {
+              opened: false,
+              readingTime: 0,
+              pageViews: 0,
+              completionPercentage: 0,
+              lastPageViewed: 0,
+              downloadCount: 0,
+              viewedPages: '',
+              engagementScore: 0,
+            },
+          },
+        },
+      });
+
+      await this.prisma.activity.create({
+        data: {
+          leadId: lead.id,
+          type: 'BROCHURE_SENT',
+          description: `Brochure "${brochure.title}" was sent to the lead.`,
+          meta: { brochureId: brochure.id, brochureTitle: brochure.title, token },
+        },
+      });
+      brochureLinkToken = token;
+    }
+
     // Enqueue welcome communication
     await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'WELCOME', {});
     await this.communicationService.enqueue(lead.id, CommunicationChannel.WHATSAPP, 'WELCOME', {});
+
+    if (brochureLinkToken) {
+      await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'BROCHURE', { brochureLink: brochureLinkToken });
+      await this.communicationService.enqueue(lead.id, CommunicationChannel.WHATSAPP, 'BROCHURE', { brochureLink: brochureLinkToken });
+    }
 
     return lead;
   }
@@ -355,6 +491,15 @@ export class LeadService {
           meta: { from: lead.status, to: dto.status }
         }
       });
+
+      if (dto.status === 'DOCUMENTS_PENDING') {
+        const pendingDocs = await this.prisma.leadDocument.findMany({
+          where: { leadId: id, status: 'PENDING', isCurrent: true }
+        });
+        const docTypeList = pendingDocs.map(d => d.documentType).join(', ') || 'Passport, Marksheets, SOP, LOR';
+        await this.communicationService.enqueue(id, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+        await this.communicationService.enqueue(id, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+      }
 
       // Synchronize latest university application status for Study Abroad category leads
       if (lead.leadCategory === 'STUDY_ABROAD') {
@@ -685,6 +830,15 @@ export class LeadService {
           description: `Status updated to ${status} via bulk action.`,
         }
       });
+
+      if (status === 'DOCUMENTS_PENDING') {
+        const pendingDocs = await this.prisma.leadDocument.findMany({
+          where: { leadId, status: 'PENDING', isCurrent: true }
+        });
+        const docTypeList = pendingDocs.map(d => d.documentType).join(', ') || 'Passport, Marksheets, SOP, LOR';
+        await this.communicationService.enqueue(leadId, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+        await this.communicationService.enqueue(leadId, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+      }
     }
 
     await this.prisma.auditLog.create({

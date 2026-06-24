@@ -1,15 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TrackEventDto, TrackFormDto, IdentifyVisitorDto } from './dto/tracker.dto';
-import { LeadSource, LeadCategory } from '@prisma/client';
+import { LeadSource, LeadCategory, CommunicationChannel } from '@prisma/client';
+import * as crypto from 'crypto';
 
 import { LeadDocumentService } from '../document/lead-document.service';
+import { CommunicationService } from '../communication/communication.service';
 
 @Injectable()
 export class TrackerService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly documentService: LeadDocumentService
+    private readonly documentService: LeadDocumentService,
+    private readonly communicationService: CommunicationService
   ) {}
 
   private mapCategoryToEnum(cat?: string): LeadCategory {
@@ -270,20 +273,35 @@ export class TrackerService {
     
     let normPhone = null;
     if (phone) {
-      const digits = phone.replace(/\D/g, '');
-      normPhone = digits ? `+${digits}` : null;
+      const clean = phone.replace(/[\s\-\(\)\[\]\{\}\+]/g, '');
+      const digits = clean.replace(/\D/g, '');
+      if (digits.length >= 10) {
+        normPhone = digits.slice(-10);
+      } else {
+        normPhone = digits || null;
+      }
     }
 
     let existingLead = null;
-    if (normEmail || normPhone) {
+    if (normEmail) {
       existingLead = await this.prisma.lead.findFirst({
         where: {
           tenantId,
           deletedAt: null,
-          OR: [
-            normEmail ? { normalizedEmail: normEmail } : undefined,
-            normPhone ? { normalizedPhone: normPhone } : undefined
-          ].filter(Boolean) as any
+          normalizedEmail: normEmail
+        },
+        include: {
+          studentProfile: true
+        }
+      });
+    }
+
+    if (!existingLead && normPhone) {
+      existingLead = await this.prisma.lead.findFirst({
+        where: {
+          tenantId,
+          deletedAt: null,
+          normalizedPhone: normPhone
         },
         include: {
           studentProfile: true
@@ -580,6 +598,55 @@ export class TrackerService {
         meta: { sessionId: dto.sessionId }
       }
     });
+
+    // Find and assign active brochure if matches category
+    const brochure = await this.prisma.brochure.findFirst({
+      where: { category: newLead.leadCategory, isActive: true },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    let brochureLinkToken = '';
+    if (brochure) {
+      const token = crypto.randomBytes(24).toString('hex');
+      await this.prisma.brochureAssignment.create({
+        data: {
+          leadId: newLead.id,
+          brochureId: brochure.id,
+          token,
+          tracking: {
+            create: {
+              opened: false,
+              readingTime: 0,
+              pageViews: 0,
+              completionPercentage: 0,
+              lastPageViewed: 0,
+              downloadCount: 0,
+              viewedPages: '',
+              engagementScore: 0,
+            },
+          },
+        },
+      });
+
+      await this.prisma.activity.create({
+        data: {
+          leadId: newLead.id,
+          type: 'BROCHURE_SENT',
+          description: `Brochure "${brochure.title}" was sent to the lead.`,
+          meta: { brochureId: brochure.id, brochureTitle: brochure.title, token },
+        },
+      });
+      brochureLinkToken = token;
+    }
+
+    // Enqueue welcome communication
+    await this.communicationService.enqueue(newLead.id, CommunicationChannel.EMAIL, 'WELCOME', {});
+    await this.communicationService.enqueue(newLead.id, CommunicationChannel.WHATSAPP, 'WELCOME', {});
+
+    if (brochureLinkToken) {
+      await this.communicationService.enqueue(newLead.id, CommunicationChannel.EMAIL, 'BROCHURE', { brochureLink: brochureLinkToken });
+      await this.communicationService.enqueue(newLead.id, CommunicationChannel.WHATSAPP, 'BROCHURE', { brochureLink: brochureLinkToken });
+    }
 
     return { lead: newLead, created: true };
   }

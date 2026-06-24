@@ -41,16 +41,6 @@ export class LeadDocumentService {
     // Calculate and update readiness score
     await this.calculateReadiness(leadId);
 
-    // Enqueue document request communication if any are pending
-    const pendingDocs = await this.prisma.leadDocument.findMany({
-      where: { leadId, status: DocumentStatus.PENDING, isCurrent: true }
-    });
-    if (pendingDocs.length > 0) {
-      const docTypeList = pendingDocs.map(d => d.documentType).join(', ');
-      await this.communicationService.enqueue(leadId, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList });
-      await this.communicationService.enqueue(leadId, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList });
-    }
-
     return createdDocs;
   }
 
@@ -281,6 +271,10 @@ export class LeadDocumentService {
           meta: { missingDocs }
         }
       });
+
+      const docTypeList = missingDocs.join(', ');
+      await this.communicationService.enqueue(leadId, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+      await this.communicationService.enqueue(leadId, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList });
     }
 
     return missingDocs;

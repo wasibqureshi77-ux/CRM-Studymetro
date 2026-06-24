@@ -31,8 +31,16 @@ export default function PublicBrochureViewerPage() {
         const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
         
         // Fetch assignment metadata
-        const res = await fetch(`${apiBase}/api/v1/brochures/public/view/${token}`);
-        if (!res.ok) throw new Error('Brochure link is invalid or has expired.');
+        const res = await fetch(`${apiBase}/api/v1/brochure/view/${token}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            throw new Error('Invalid or Expired Link. The requested brochure was not found.');
+          } else if (res.status === 400) {
+            throw new Error('Invalid Link format.');
+          } else {
+            throw new Error('Server Error: Failed to retrieve brochure details.');
+          }
+        }
         
         const data = await res.json();
         setMeta(data);
@@ -42,7 +50,7 @@ export default function PublicBrochureViewerPage() {
         await loadPdfJsCDN();
 
         // Fetch and load the PDF document using window.pdfjsLib
-        const pdfUrl = `${apiBase}/api/v1/brochures/public/pdf/${token}`;
+        const pdfUrl = `${apiBase}/api/v1/brochure/pdf/${token}`;
         const loadingTask = (window as any).pdfjsLib.getDocument({
           url: pdfUrl,
           withCredentials: false
@@ -60,7 +68,13 @@ export default function PublicBrochureViewerPage() {
 
       } catch (err: any) {
         console.error(err);
-        setErrorMsg(err.message || 'Failed to load brochure document.');
+        let msg = 'Failed to load brochure document.';
+        if (err.message && err.message.includes('Failed to fetch')) {
+          msg = 'Server Connection Error: Could not connect to the brochure service.';
+        } else if (err.message) {
+          msg = err.message;
+        }
+        setErrorMsg(msg);
       } finally {
         setLoading(false);
       }
@@ -138,7 +152,7 @@ export default function PublicBrochureViewerPage() {
   const trackEvent = async (eventType: 'OPEN' | 'PAGE_VIEW' | 'HEARTBEAT' | 'DOWNLOAD', payload?: any) => {
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-      await fetch(`${apiBase}/api/v1/brochures/public/track/${token}/event`, {
+      await fetch(`${apiBase}/api/v1/brochure/event/${token}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -176,7 +190,7 @@ export default function PublicBrochureViewerPage() {
     await trackEvent('DOWNLOAD');
     const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
     const link = document.createElement('a');
-    link.href = `${apiBase}/api/v1/brochures/public/pdf/${token}`;
+    link.href = `${apiBase}/api/v1/brochure/pdf/${token}`;
     link.download = meta?.brochure?.title ? `${meta.brochure.title}.pdf` : 'Brochure.pdf';
     document.body.appendChild(link);
     link.click();

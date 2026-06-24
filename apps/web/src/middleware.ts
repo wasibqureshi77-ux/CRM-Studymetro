@@ -7,14 +7,15 @@ export function middleware(request: NextRequest) {
 
   // 1. Define login/register and asset exclusions
   const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+  const isPublicRoute = pathname.startsWith('/brochure/');
   const isPublicAsset = pathname.startsWith('/_next') || pathname.startsWith('/favicon.ico');
 
   if (isPublicAsset) {
     return NextResponse.next();
   }
 
-  // 2. Redirect rule: Redirect to /login if token doesn't exist and not on auth path
-  if (!token && !isAuthRoute) {
+  // 2. Redirect rule: Redirect to /login if token doesn't exist and not on auth path or public route
+  if (!token && !isAuthRoute && !isPublicRoute) {
     const loginUrl = new URL('/login', request.url);
     return NextResponse.redirect(loginUrl);
   }

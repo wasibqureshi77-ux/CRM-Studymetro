@@ -148,3 +148,58 @@ export class BrochureController {
     return this.brochureService.trackEvent(token, body.eventType, body.payload);
   }
 }
+
+@Controller('api/v1/brochure')
+export class PublicBrochureController {
+  constructor(private readonly brochureService: BrochureService) {}
+
+  @Get('view/:trackingId')
+  async publicGetAssignment(@Param('trackingId') trackingId: string) {
+    const assignment = await this.brochureService.getAssignmentByToken(trackingId);
+    return {
+      id: assignment.id,
+      token: assignment.token,
+      brochure: {
+        title: assignment.brochure.title,
+        category: assignment.brochure.category,
+        totalPages: assignment.brochure.totalPages,
+      },
+      tracking: assignment.tracking ? {
+        opened: assignment.tracking.opened,
+        readingTime: assignment.tracking.readingTime,
+        pageViews: assignment.tracking.pageViews,
+        completionPercentage: assignment.tracking.completionPercentage,
+        lastPageViewed: assignment.tracking.lastPageViewed,
+        downloadCount: assignment.tracking.downloadCount,
+        viewedPages: assignment.tracking.viewedPages,
+      } : null,
+    };
+  }
+
+  @Get('pdf/:trackingId')
+  async publicGetPdf(@Param('trackingId') trackingId: string, @Res() res: Response) {
+    const assignment = await this.brochureService.getAssignmentByToken(trackingId);
+    
+    const resolvedPath = path.resolve(UPLOAD_ROOT, assignment.brochure.filePath);
+    if (!fs.existsSync(resolvedPath)) {
+      throw new NotFoundException('Physical PDF brochure file not found');
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(assignment.brochure.title)}.pdf"`);
+    
+    const stream = fs.createReadStream(resolvedPath);
+    stream.pipe(res);
+  }
+
+  @Post('event/:trackingId')
+  async publicTrackEvent(
+    @Param('trackingId') trackingId: string,
+    @Body() body: { eventType: 'OPEN' | 'PAGE_VIEW' | 'HEARTBEAT' | 'DOWNLOAD'; payload?: any }
+  ) {
+    if (!body.eventType) {
+      throw new BadRequestException('eventType is required');
+    }
+    return this.brochureService.trackEvent(trackingId, body.eventType, body.payload);
+  }
+}

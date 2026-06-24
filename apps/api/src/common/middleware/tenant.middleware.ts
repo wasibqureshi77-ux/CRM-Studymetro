@@ -17,6 +17,8 @@ export class TenantMiddleware implements NestMiddleware {
       requestPath.startsWith('/api/v1/auth') ||
       requestPath.startsWith('/api/v1/tracker') ||
       requestPath.startsWith('api/v1/tracker') ||
+      requestPath.startsWith('/api/v1/brochure') ||
+      requestPath.startsWith('api/v1/brochure') ||
       requestPath.includes('metro-tracker.js')
     ) {
       req.tenantId = 'studymetro-global';
