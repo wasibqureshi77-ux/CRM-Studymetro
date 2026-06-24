@@ -163,8 +163,8 @@ export class ApplicationService {
         });
 
         // Enqueue Application Submitted communication
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'APPLICATION_SUBMITTED', {});
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'APPLICATION_SUBMITTED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'APPLICATION_SUBMITTED', {}, 'ApplicationService');
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'APPLICATION_SUBMITTED', {}, 'ApplicationService');
       }
     }
 
@@ -181,8 +181,8 @@ export class ApplicationService {
         });
 
         // Enqueue Offer Received communication
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'OFFER_RECEIVED', {});
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'OFFER_RECEIVED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'OFFER_RECEIVED', {}, 'ApplicationService');
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'OFFER_RECEIVED', {}, 'ApplicationService');
       } else if (dto.offerStatus === OfferStatus.OFFER_ACCEPTED) {
         await this.prisma.activity.create({
           data: {
@@ -195,8 +195,8 @@ export class ApplicationService {
         });
 
         // Enqueue Offer Accepted communication
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'OFFER_ACCEPTED', {});
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'OFFER_ACCEPTED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'OFFER_ACCEPTED', {}, 'ApplicationService');
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'OFFER_ACCEPTED', {}, 'ApplicationService');
       }
     }
 
@@ -213,8 +213,8 @@ export class ApplicationService {
         });
 
         // Enqueue Visa Applied communication
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'VISA_APPLIED', {});
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'VISA_APPLIED', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'VISA_APPLIED', {}, 'ApplicationService');
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'VISA_APPLIED', {}, 'ApplicationService');
       } else if (dto.visaStatus === VisaStatus.VISA_APPROVED) {
         await this.prisma.activity.create({
           data: {
@@ -244,10 +244,10 @@ export class ApplicationService {
         });
 
         // Enqueue Visa Approved & Enrollment Complete communications
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'VISA_APPROVED', {});
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'VISA_APPROVED', {});
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'ENROLLMENT_COMPLETE', {});
-        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'ENROLLMENT_COMPLETE', {});
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'VISA_APPROVED', {}, 'ApplicationService');
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'VISA_APPROVED', {}, 'ApplicationService');
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.EMAIL, 'ENROLLMENT_COMPLETE', {}, 'ApplicationService');
+        await this.communicationService.enqueue(application.leadId, CommunicationChannel.WHATSAPP, 'ENROLLMENT_COMPLETE', {}, 'ApplicationService');
       }
     }
 

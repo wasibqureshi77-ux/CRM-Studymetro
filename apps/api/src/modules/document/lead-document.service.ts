@@ -273,8 +273,8 @@ export class LeadDocumentService {
       });
 
       const docTypeList = missingDocs.join(', ');
-      await this.communicationService.enqueue(leadId, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList });
-      await this.communicationService.enqueue(leadId, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+      await this.communicationService.enqueue(leadId, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList }, 'LeadDocumentService');
+      await this.communicationService.enqueue(leadId, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList }, 'LeadDocumentService');
     }
 
     return missingDocs;

@@ -636,16 +636,16 @@ export class TrackerService {
           meta: { brochureId: brochure.id, brochureTitle: brochure.title, token },
         },
       });
+      const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetro.com';
+      console.log(`[BROCHURE GENERATION] Assigned brochure "${brochure.title}" to lead ${newLead.id}. Unique link: ${appUrl}/brochure/view/${token}`);
       brochureLinkToken = token;
     }
 
     // Enqueue welcome communication
-    await this.communicationService.enqueue(newLead.id, CommunicationChannel.EMAIL, 'WELCOME', {});
-    await this.communicationService.enqueue(newLead.id, CommunicationChannel.WHATSAPP, 'WELCOME', {});
+    await this.communicationService.enqueue(newLead.id, CommunicationChannel.EMAIL, 'WELCOME', {}, 'TrackerService');
 
     if (brochureLinkToken) {
-      await this.communicationService.enqueue(newLead.id, CommunicationChannel.EMAIL, 'BROCHURE', { brochureLink: brochureLinkToken });
-      await this.communicationService.enqueue(newLead.id, CommunicationChannel.WHATSAPP, 'BROCHURE', { brochureLink: brochureLinkToken });
+      await this.communicationService.enqueue(newLead.id, CommunicationChannel.EMAIL, 'BROCHURE', { brochureLink: brochureLinkToken }, 'TrackerService');
     }
 
     return { lead: newLead, created: true };

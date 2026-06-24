@@ -184,11 +184,11 @@ async function runVerification() {
   const brochureCount = eventTypes.filter(t => t === 'BROCHURE').length;
   const docReqCount = eventTypes.filter(t => t === 'DOCUMENT_REQUEST').length;
 
-  console.log(`📊 WELCOME Event Count: ${welcomeCount} (Expected: 2 - Email & WhatsApp)`);
-  console.log(`📊 BROCHURE Event Count: ${brochureCount} (Expected: 2 - Email & WhatsApp)`);
+  console.log(`📊 WELCOME Event Count: ${welcomeCount} (Expected: 1)`);
+  console.log(`📊 BROCHURE Event Count: ${brochureCount} (Expected: 1)`);
   console.log(`📊 DOCUMENT_REQUEST Event Count on Creation: ${docReqCount} (Expected: 0)`);
 
-  if (welcomeCount !== 2 || brochureCount !== 2 || docReqCount !== 0) {
+  if (welcomeCount !== 1 || brochureCount !== 1 || docReqCount !== 0) {
     throw new Error('Welcome workflow enqueued incorrect items on lead creation');
   }
 

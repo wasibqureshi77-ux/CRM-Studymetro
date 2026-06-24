@@ -185,14 +185,22 @@ export class CommunicationService implements OnModuleInit {
             isActive: true,
           },
         });
+      } else {
+        await this.prisma.communicationTemplate.update({
+          where: { id: existing.id },
+          data: {
+            subject: t.subject,
+            content: t.content,
+            htmlContent: t.htmlContent,
+          }
+        });
       }
     }
     console.log('✅ Communication templates verified and seeded.');
   }
 
-  async enqueue(leadId: string, channel: CommunicationChannel, eventType: string, payload: any) {
-    console.log(`Enqueuing communication for lead ${leadId}, channel ${channel}, event ${eventType}`);
-    return this.prisma.communicationQueue.create({
+  async enqueue(leadId: string, channel: CommunicationChannel, eventType: string, payload: any, sourceService?: string) {
+    const queueItem = await this.prisma.communicationQueue.create({
       data: {
         leadId,
         channel,
@@ -201,6 +209,8 @@ export class CommunicationService implements OnModuleInit {
         status: QueueStatus.PENDING,
       },
     });
+    console.log(`[QUEUE ENQUEUE] Lead ID: ${leadId}, Event Type: ${eventType}, Source Service: ${sourceService || 'Unknown'}, Queue ID: ${queueItem.id}, Timestamp: ${new Date().toISOString()}`);
+    return queueItem;
   }
 
   async processQueue() {
@@ -208,10 +218,29 @@ export class CommunicationService implements OnModuleInit {
     this.processing = true;
 
     try {
-      const pendingItems = await this.prisma.communicationQueue.findMany({
-        where: { status: QueueStatus.PENDING },
-        take: 10,
-        orderBy: { createdAt: 'asc' },
+      const pendingItems = await this.prisma.$transaction(async (tx) => {
+        const lockedItems = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "CommunicationQueue"
+          WHERE status = 'PENDING'
+          ORDER BY "createdAt" ASC
+          LIMIT 10
+          FOR UPDATE SKIP LOCKED
+        `;
+
+        if (!lockedItems || lockedItems.length === 0) {
+          return [];
+        }
+
+        const itemIds = lockedItems.map(item => item.id);
+
+        await tx.communicationQueue.updateMany({
+          where: { id: { in: itemIds } },
+          data: { status: QueueStatus.PROCESSING }
+        });
+
+        return tx.communicationQueue.findMany({
+          where: { id: { in: itemIds } }
+        });
       });
 
       if (pendingItems.length === 0) {
@@ -222,10 +251,6 @@ export class CommunicationService implements OnModuleInit {
       console.log(`Processing ${pendingItems.length} pending communication items...`);
 
       for (const item of pendingItems) {
-        await this.prisma.communicationQueue.update({
-          where: { id: item.id },
-          data: { status: QueueStatus.PROCESSING },
-        });
 
         try {
           const lead = await this.prisma.lead.findUnique({
@@ -267,7 +292,11 @@ export class CommunicationService implements OnModuleInit {
             ? `${lead.assignee.firstName || ''} ${lead.assignee.lastName || ''}`.trim()
             : payload.counsellor || 'Assigned Counsellor';
 
-          const brochureLink = payload.brochureLink ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/brochure/view/${payload.brochureLink}` : '';
+          const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetro.com';
+          const brochureLink = payload.brochureLink ? `${appUrl}/brochure/view/${payload.brochureLink}` : '';
+          if (payload.brochureLink) {
+            console.log(`[BROCHURE LINK GENERATION] Enqueued email contains brochure URL: ${brochureLink}`);
+          }
 
           // Resolve plain content variables
           let textMessage = template.content;

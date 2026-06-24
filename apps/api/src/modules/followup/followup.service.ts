@@ -66,8 +66,8 @@ export class FollowupService {
 
     // Enqueue followup reminder/scheduled communications
     const dateStr = followup.followupDate.toLocaleString();
-    await this.communicationService.enqueue(dto.leadId, CommunicationChannel.EMAIL, 'FOLLOWUP_REMINDER', { followupDate: dateStr });
-    await this.communicationService.enqueue(dto.leadId, CommunicationChannel.WHATSAPP, 'FOLLOWUP_REMINDER', { followupDate: dateStr });
+    await this.communicationService.enqueue(dto.leadId, CommunicationChannel.EMAIL, 'FOLLOWUP_REMINDER', { followupDate: dateStr }, 'FollowupService');
+    await this.communicationService.enqueue(dto.leadId, CommunicationChannel.WHATSAPP, 'FOLLOWUP_REMINDER', { followupDate: dateStr }, 'FollowupService');
 
     return followup;
   }

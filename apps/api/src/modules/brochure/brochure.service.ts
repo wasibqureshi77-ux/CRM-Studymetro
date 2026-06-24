@@ -161,30 +161,32 @@ export class BrochureService {
   }
 
   async trackEvent(token: string, eventType: 'OPEN' | 'PAGE_VIEW' | 'HEARTBEAT' | 'DOWNLOAD', payload?: any) {
-    const assignment = await this.getAssignmentByToken(token);
-    const tracking = assignment.tracking;
-    if (!tracking) {
-      throw new BadRequestException('Tracking record not initialized for assignment');
-    }
-
-    let opened = tracking.opened;
-    let readingTime = tracking.readingTime;
-    let pageViews = tracking.pageViews;
-    let lastPageViewed = tracking.lastPageViewed;
-    let downloadCount = tracking.downloadCount;
-    let viewedPages = tracking.viewedPages;
-    let completionPercentage = tracking.completionPercentage;
-
-    let activityCreatedType: string | null = null;
-    let activityDesc = '';
-
-    if (eventType === 'OPEN') {
-      if (!opened) {
-        opened = true;
-        activityCreatedType = 'BROCHURE_OPENED';
-        activityDesc = `Lead opened the brochure "${assignment.brochure.title}".`;
+    try {
+      const assignment = await this.getAssignmentByToken(token);
+      const tracking = assignment.tracking;
+      if (!tracking) {
+        throw new BadRequestException('Tracking record not initialized for assignment');
       }
-    } else if (eventType === 'PAGE_VIEW') {
+
+      let opened = tracking.opened;
+      let readingTime = tracking.readingTime;
+      let pageViews = tracking.pageViews;
+      let lastPageViewed = tracking.lastPageViewed;
+      let downloadCount = tracking.downloadCount;
+      let viewedPages = tracking.viewedPages;
+      let completionPercentage = tracking.completionPercentage;
+
+      let activityCreatedType: string | null = null;
+      let activityDesc = '';
+
+      if (eventType === 'OPEN') {
+        console.log(`[BROCHURE OPEN] Lead ${assignment.leadId} opened brochure "${assignment.brochure.title}" (Token: ${token})`);
+        if (!opened) {
+          opened = true;
+          activityCreatedType = 'BROCHURE_OPENED';
+          activityDesc = `Lead opened the brochure "${assignment.brochure.title}".`;
+        }
+      } else if (eventType === 'PAGE_VIEW') {
       const pageNum = Number(payload?.pageNumber);
       if (pageNum && pageNum > 0 && pageNum <= assignment.brochure.totalPages) {
         pageViews += 1;
@@ -318,18 +320,22 @@ export class BrochureService {
       leadLabel = 'Warm';
     }
 
-    await this.prisma.lead.update({
-      where: { id: assignment.leadId },
-      data: {
-        engagementScore: totalLeadScore,
-        engagementLabel: leadLabel,
-      },
-    });
+      await this.prisma.lead.update({
+        where: { id: assignment.leadId },
+        data: {
+          engagementScore: totalLeadScore,
+          engagementLabel: leadLabel,
+        },
+      });
 
-    return {
-      tracking: updatedTracking,
-      leadEngagementScore: totalLeadScore,
-      leadEngagementLabel: leadLabel,
-    };
+      return {
+        tracking: updatedTracking,
+        leadEngagementScore: totalLeadScore,
+        leadEngagementLabel: leadLabel,
+      };
+    } catch (err: any) {
+      console.error(`[BROCHURE TRACKING ERROR] Failed to track event ${eventType} for token ${token}:`, err);
+      throw err;
+    }
   }
 }

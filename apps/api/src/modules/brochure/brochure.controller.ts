@@ -200,6 +200,15 @@ export class PublicBrochureController {
     if (!body.eventType) {
       throw new BadRequestException('eventType is required');
     }
-    return this.brochureService.trackEvent(trackingId, body.eventType, body.payload);
+    try {
+      return await this.brochureService.trackEvent(trackingId, body.eventType, body.payload);
+    } catch (err: any) {
+      console.error(`[BROCHURE TRACKING ERROR] Failed to track public event ${body.eventType} for token ${trackingId}:`, err);
+      return {
+        success: false,
+        message: 'Tracking temporarily offline, reading is permitted.',
+        error: err.message
+      };
+    }
   }
 }

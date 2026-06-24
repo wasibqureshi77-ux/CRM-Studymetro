@@ -281,16 +281,16 @@ export class LeadService {
           meta: { brochureId: brochure.id, brochureTitle: brochure.title, token },
         },
       });
+      const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetro.com';
+      console.log(`[BROCHURE GENERATION] Assigned brochure "${brochure.title}" to lead ${lead.id}. Unique link: ${appUrl}/brochure/view/${token}`);
       brochureLinkToken = token;
     }
 
     // Enqueue welcome communication
-    await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'WELCOME', {});
-    await this.communicationService.enqueue(lead.id, CommunicationChannel.WHATSAPP, 'WELCOME', {});
+    await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'WELCOME', {}, 'LeadService');
 
     if (brochureLinkToken) {
-      await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'BROCHURE', { brochureLink: brochureLinkToken });
-      await this.communicationService.enqueue(lead.id, CommunicationChannel.WHATSAPP, 'BROCHURE', { brochureLink: brochureLinkToken });
+      await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'BROCHURE', { brochureLink: brochureLinkToken }, 'LeadService');
     }
 
     return lead;
@@ -497,8 +497,8 @@ export class LeadService {
           where: { leadId: id, status: 'PENDING', isCurrent: true }
         });
         const docTypeList = pendingDocs.map(d => d.documentType).join(', ') || 'Passport, Marksheets, SOP, LOR';
-        await this.communicationService.enqueue(id, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList });
-        await this.communicationService.enqueue(id, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+        await this.communicationService.enqueue(id, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList }, 'LeadService');
+        await this.communicationService.enqueue(id, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList }, 'LeadService');
       }
 
       // Synchronize latest university application status for Study Abroad category leads
@@ -836,8 +836,8 @@ export class LeadService {
           where: { leadId, status: 'PENDING', isCurrent: true }
         });
         const docTypeList = pendingDocs.map(d => d.documentType).join(', ') || 'Passport, Marksheets, SOP, LOR';
-        await this.communicationService.enqueue(leadId, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList });
-        await this.communicationService.enqueue(leadId, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList });
+        await this.communicationService.enqueue(leadId, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList }, 'LeadService');
+        await this.communicationService.enqueue(leadId, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList }, 'LeadService');
       }
     }
 
