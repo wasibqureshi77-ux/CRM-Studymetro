@@ -531,11 +531,13 @@ model EmailSetting {
   senderName  String
   senderEmail String
   encryption  String   @default("TLS")
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  enabled         Boolean  @default(true)
+  emailEnabled    Boolean  @default(true)
+  whatsappEnabled Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model Brochure {

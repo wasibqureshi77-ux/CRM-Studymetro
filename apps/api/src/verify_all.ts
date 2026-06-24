@@ -115,7 +115,7 @@ async function runVerification() {
       source: LeadSource.MANUAL
     },
     {
-      firstName: 'Deduplication Latest',
+      firstName: 'Deduplication',
       lastName: 'Tester',
       email: testEmail,
       phone: '9876543210',
@@ -123,7 +123,7 @@ async function runVerification() {
       source: LeadSource.MANUAL
     },
     {
-      firstName: 'Deduplication Final',
+      firstName: 'Deduplication',
       lastName: 'Tester',
       email: testEmail,
       phone: '91-9876543210',
@@ -178,17 +178,19 @@ async function runVerification() {
     console.log(`   - Event: ${item.eventType}, Channel: ${item.channel}`);
   }
 
-  // Welcome flow should only trigger: WELCOME and BROCHURE
+  // Welcome flow should only trigger: WELCOME_BROCHURE
   const eventTypes = commQueueItems.map(item => item.eventType);
+  const welcomeBrochureCount = eventTypes.filter(t => t === 'WELCOME_BROCHURE').length;
   const welcomeCount = eventTypes.filter(t => t === 'WELCOME').length;
   const brochureCount = eventTypes.filter(t => t === 'BROCHURE').length;
   const docReqCount = eventTypes.filter(t => t === 'DOCUMENT_REQUEST').length;
 
-  console.log(`📊 WELCOME Event Count: ${welcomeCount} (Expected: 1)`);
-  console.log(`📊 BROCHURE Event Count: ${brochureCount} (Expected: 1)`);
+  console.log(`📊 WELCOME_BROCHURE Event Count: ${welcomeBrochureCount} (Expected: 1)`);
+  console.log(`📊 WELCOME Event Count: ${welcomeCount} (Expected: 0)`);
+  console.log(`📊 BROCHURE Event Count: ${brochureCount} (Expected: 0)`);
   console.log(`📊 DOCUMENT_REQUEST Event Count on Creation: ${docReqCount} (Expected: 0)`);
 
-  if (welcomeCount !== 1 || brochureCount !== 1 || docReqCount !== 0) {
+  if (welcomeBrochureCount !== 1 || welcomeCount !== 0 || brochureCount !== 0 || docReqCount !== 0) {
     throw new Error('Welcome workflow enqueued incorrect items on lead creation');
   }
 

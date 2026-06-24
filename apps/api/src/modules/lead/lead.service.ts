@@ -74,29 +74,30 @@ export class LeadService {
     const leadNumber = await this.generateNextLeadNumber();
     const normEmail = this.normalizeEmail(dto.email);
     const normPhone = this.normalizePhone(dto.phone);
+    const category = this.mapCategoryToEnum(dto.leadCategory);
 
     let match = null;
-    if (normEmail) {
-      match = await this.prisma.lead.findFirst({
+    if (normEmail && normPhone && dto.firstName && category) {
+      const candidates = await this.prisma.lead.findMany({
         where: {
           tenantId,
           deletedAt: null,
-          normalizedEmail: normEmail
+          normalizedEmail: normEmail,
+          normalizedPhone: normPhone,
+          leadCategory: category,
         }
       });
+
+      const inputFirst = (dto.firstName || '').trim().toLowerCase();
+      const inputLast = (dto.lastName || '').trim().toLowerCase();
+      
+      match = candidates.find(c => {
+        const cFirst = (c.firstName || '').trim().toLowerCase();
+        const cLast = (c.lastName || '').trim().toLowerCase();
+        return cFirst === inputFirst && cLast === inputLast;
+      }) || null;
     }
 
-    if (!match && normPhone) {
-      match = await this.prisma.lead.findFirst({
-        where: {
-          tenantId,
-          deletedAt: null,
-          normalizedPhone: normPhone
-        }
-      });
-    }
-
-    const category = this.mapCategoryToEnum(dto.leadCategory);
     const prefCountry = dto.preferredCountry || dto.studentProfile?.targetCountry;
     const intIntake = dto.intendedIntake || dto.studentProfile?.intake;
     const targetCourse = dto.leadCategory || dto.studentProfile?.targetCourse;
@@ -173,7 +174,7 @@ export class LeadService {
           leadId: match.id,
           actorId,
           type: 'INGRESS_MATCH',
-          description: 'Duplicate lead match detected during ingestion.',
+          description: 'Duplicate enquiry received',
           meta: { attemptedSource: dto.source },
         }
       });
@@ -310,12 +311,14 @@ export class LeadService {
       brochureLinkToken = token;
     }
 
-    // Enqueue welcome communication
-    await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'WELCOME', {}, 'LeadService');
-
-    if (brochureLinkToken) {
-      await this.communicationService.enqueue(lead.id, CommunicationChannel.EMAIL, 'BROCHURE', { brochureLink: brochureLinkToken }, 'LeadService');
-    }
+    // Enqueue welcome_brochure communication
+    await this.communicationService.enqueue(
+      lead.id,
+      CommunicationChannel.EMAIL,
+      'WELCOME_BROCHURE',
+      { brochureLink: brochureLinkToken || '' },
+      'LeadService'
+    );
 
     return lead;
   }

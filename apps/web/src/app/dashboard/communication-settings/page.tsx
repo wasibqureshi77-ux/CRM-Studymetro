@@ -12,6 +12,9 @@ export default function CommunicationSettingsPage() {
   const [senderName, setSenderName] = useState('');
   const [encryption, setEncryption] = useState('TLS');
   const [enabled, setEnabled] = useState(true);
+  
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,6 +46,8 @@ export default function CommunicationSettingsPage() {
         setSenderName(res.senderName || '');
         setEncryption(res.encryption || 'TLS');
         setEnabled(res.enabled !== undefined ? res.enabled : true);
+        setEmailEnabled(res.emailEnabled !== undefined ? res.emailEnabled : true);
+        setWhatsappEnabled(res.whatsappEnabled !== undefined ? res.whatsappEnabled : false);
       }
     } catch (err: any) {
       console.error('Failed to load settings', err);
@@ -67,12 +72,14 @@ export default function CommunicationSettingsPage() {
         senderEmail,
         senderName,
         encryption,
-        enabled
+        enabled,
+        emailEnabled,
+        whatsappEnabled
       });
-      addToast('success', 'SMTP Configuration saved successfully!');
+      addToast('success', 'SMTP & Channel Configuration saved successfully!');
       fetchSettings();
     } catch (err: any) {
-      addToast('error', err.message || 'Failed to save SMTP configuration');
+      addToast('error', err.message || 'Failed to save configuration');
     } finally {
       setSaving(false);
     }
@@ -137,8 +144,47 @@ export default function CommunicationSettingsPage() {
       <div>
         <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Communication Hub Settings</h1>
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
-          Configure connection credentials for your Hostinger SMTP Email server.
+          Configure connection credentials and controls for your communication channels.
         </p>
+      </div>
+
+      {/* Communication Channel Status Widgets */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div style={{
+          backgroundColor: '#fff',
+          border: '1px solid var(--border-color)',
+          borderRadius: '6px',
+          padding: '16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Email Status</div>
+            <div style={{ fontSize: '18px', fontWeight: 700, marginTop: '4px', color: emailEnabled ? '#10b981' : '#ef4444' }}>
+              {emailEnabled ? 'Enabled' : 'Disabled'}
+            </div>
+          </div>
+          <span style={{ fontSize: '24px' }}>✉️</span>
+        </div>
+
+        <div style={{
+          backgroundColor: '#fff',
+          border: '1px solid var(--border-color)',
+          borderRadius: '6px',
+          padding: '16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>WhatsApp Status</div>
+            <div style={{ fontSize: '18px', fontWeight: 700, marginTop: '4px', color: whatsappEnabled ? '#10b981' : '#ef4444' }}>
+              {whatsappEnabled ? 'Enabled' : 'Disabled'}
+            </div>
+          </div>
+          <span style={{ fontSize: '24px' }}>💬</span>
+        </div>
       </div>
 
       <div style={{ backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '24px' }}>
@@ -246,6 +292,46 @@ export default function CommunicationSettingsPage() {
               <label htmlFor="smtpEnabledCheckbox" style={{ fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
                 Enable SMTP Outgoing Email delivery
               </label>
+            </div>
+          </div>
+
+          {/* Channel Toggle Switches */}
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '8px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px 0' }}>Channel Enable/Disable Controls</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="emailEnabledCheckbox"
+                    checked={emailEnabled}
+                    onChange={(e) => setEmailEnabled(e.target.checked)}
+                  />
+                  <label htmlFor="emailEnabledCheckbox" style={{ fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                    Email Communications
+                  </label>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 0 22px' }}>
+                  When disabled, no email communications should be queued or sent.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="whatsappEnabledCheckbox"
+                    checked={whatsappEnabled}
+                    onChange={(e) => setWhatsappEnabled(e.target.checked)}
+                  />
+                  <label htmlFor="whatsappEnabledCheckbox" style={{ fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                    WhatsApp Communications
+                  </label>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 0 22px' }}>
+                  When disabled, WhatsApp communications should not enter the communication queue.
+                </p>
+              </div>
             </div>
           </div>
 

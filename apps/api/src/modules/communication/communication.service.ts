@@ -56,6 +56,20 @@ export class CommunicationService implements OnModuleInit {
         htmlContent: null
       },
       {
+        name: 'WELCOME_BROCHURE',
+        channel: CommunicationChannel.EMAIL,
+        subject: 'Welcome to StudyMetro – Your Free Information Brochure',
+        content: 'Dear {{name}},\n\nThank you for contacting StudyMetro.\n\nWe are excited to help you with your educational journey.\n\nReference ID:\n{{leadNumber}}\n\nYou can view your brochure here:\n\n{{brochureLink}}\n\nOur counsellor will contact you shortly.\n\nBest Regards,\nStudyMetro Team',
+        htmlContent: '<h3>Dear {{name}},</h3><p>Thank you for contacting <strong>StudyMetro</strong>.</p><p>We are excited to help you with your educational journey.</p><p>Reference ID:<br/><strong>{{leadNumber}}</strong></p><p>You can view your brochure here:</p><p><a href="{{brochureLink}}">View Brochure</a></p><p>Our counsellor will contact you shortly.</p><br/><p>Best Regards,<br/>StudyMetro Team</p>'
+      },
+      {
+        name: 'WELCOME_BROCHURE',
+        channel: CommunicationChannel.WHATSAPP,
+        subject: '',
+        content: 'Hello {{name}}, welcome to StudyMetro! Thank you for contacting us. You can view your brochure here: {{brochureLink}}. Reference ID: {{leadNumber}}',
+        htmlContent: null
+      },
+      {
         name: 'DOCUMENT_REQUEST',
         channel: CommunicationChannel.EMAIL,
         subject: 'Documents Required for Application',
@@ -200,6 +214,34 @@ export class CommunicationService implements OnModuleInit {
   }
 
   async enqueue(leadId: string, channel: CommunicationChannel, eventType: string, payload: any, sourceService?: string) {
+    const lead = await this.prisma.lead.findUnique({
+      where: { id: leadId },
+      select: { tenantId: true }
+    });
+
+    let emailEnabled = true;
+    let whatsappEnabled = false;
+
+    if (lead) {
+      const settings = await this.prisma.emailSetting.findUnique({
+        where: { tenantId: lead.tenantId }
+      });
+      if (settings) {
+        emailEnabled = settings.emailEnabled;
+        whatsappEnabled = settings.whatsappEnabled;
+      }
+    }
+
+    if (channel === CommunicationChannel.EMAIL && !emailEnabled) {
+      console.log(`[QUEUE ENQUEUE SKIP] Email channel is disabled for Lead ID: ${leadId}`);
+      return null;
+    }
+
+    if (channel === CommunicationChannel.WHATSAPP && !whatsappEnabled) {
+      console.log(`[QUEUE ENQUEUE SKIP] WhatsApp channel is disabled for Lead ID: ${leadId}`);
+      return null;
+    }
+
     const queueItem = await this.prisma.communicationQueue.create({
       data: {
         leadId,
@@ -550,6 +592,8 @@ export class CommunicationService implements OnModuleInit {
           senderEmail: data.senderEmail,
           encryption: data.encryption,
           enabled: data.enabled !== undefined ? data.enabled : true,
+          emailEnabled: data.emailEnabled !== undefined ? data.emailEnabled : true,
+          whatsappEnabled: data.whatsappEnabled !== undefined ? data.whatsappEnabled : false,
         }
       });
     } else {
@@ -564,6 +608,8 @@ export class CommunicationService implements OnModuleInit {
           senderEmail: data.senderEmail,
           encryption: data.encryption,
           enabled: data.enabled !== undefined ? data.enabled : true,
+          emailEnabled: data.emailEnabled !== undefined ? data.emailEnabled : true,
+          whatsappEnabled: data.whatsappEnabled !== undefined ? data.whatsappEnabled : false,
         }
       });
     }

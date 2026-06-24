@@ -304,33 +304,6 @@ export class TrackerService {
       }
     }
 
-    let existingLead = null;
-    if (normEmail) {
-      existingLead = await this.prisma.lead.findFirst({
-        where: {
-          tenantId,
-          deletedAt: null,
-          normalizedEmail: normEmail
-        },
-        include: {
-          studentProfile: true
-        }
-      });
-    }
-
-    if (!existingLead && normPhone) {
-      existingLead = await this.prisma.lead.findFirst({
-        where: {
-          tenantId,
-          deletedAt: null,
-          normalizedPhone: normPhone
-        },
-        include: {
-          studentProfile: true
-        }
-      });
-    }
-
     const preferredCountry = dto.formFields.preferredCountry || dto.formFields.country || null;
     const preferredCourse = dto.formFields.preferredCourse || null;
     const intendedIntake = dto.formFields.intendedIntake || dto.formFields.intake || null;
@@ -346,6 +319,37 @@ export class TrackerService {
 
     const category = this.mapCategoryToEnum(dto.formFields.leadCategory);
 
+    // Split name
+    const fullName = dto.formFields.name || 'Anonymous Visitor';
+    const nameParts = fullName.trim().split(/\s+/);
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    let existingLead = null;
+    if (normEmail && normPhone && firstName && category) {
+      const candidates = await this.prisma.lead.findMany({
+        where: {
+          tenantId,
+          deletedAt: null,
+          normalizedEmail: normEmail,
+          normalizedPhone: normPhone,
+          leadCategory: category,
+        },
+        include: {
+          studentProfile: true
+        }
+      });
+
+      const inputFirst = firstName.trim().toLowerCase();
+      const inputLast = lastName.trim().toLowerCase();
+
+      existingLead = candidates.find(c => {
+        const cFirst = (c.firstName || '').trim().toLowerCase();
+        const cLast = (c.lastName || '').trim().toLowerCase();
+        return cFirst === inputFirst && cLast === inputLast;
+      }) || null;
+    }
+
     if (existingLead) {
       // Check for changes and create timeline event activities
       if (category === 'STUDY_ABROAD') {
@@ -357,7 +361,7 @@ export class TrackerService {
           changes.push(`Preferred Course changed: ${existingLead.preferredCourse || 'None'} → ${preferredCourse}`);
         }
         if (intendedIntake && intendedIntake !== existingLead.intendedIntake) {
-          changes.push(`Intended Intake changed: ${existingLead.intendedIntake || 'None'} → ${intendedIntake}`);
+          changes.push(`Intended Intake changed: ${existingLead.intendedIntake || 'None'} → ${intake}`);
         }
         if (planningTimeline && planningTimeline !== existingLead.planningTimeline) {
           changes.push(`Planning Timeline changed: ${existingLead.planningTimeline || 'None'} → ${planningTimeline}`);
@@ -504,7 +508,7 @@ export class TrackerService {
         data: {
           leadId: existingLead.id,
           type: 'INGRESS_MATCH',
-          description: `Form submitted on page ${dto.url}. Lead duplicate matched.`,
+          description: 'Duplicate enquiry received',
           meta: { sessionId: dto.sessionId }
         }
       });
@@ -523,12 +527,6 @@ export class TrackerService {
         sourceVal = LeadSource.FACEBOOK_ADS;
       }
     }
-
-    // Split name
-    const fullName = dto.formFields.name || 'Anonymous Visitor';
-    const nameParts = fullName.trim().split(/\s+/);
-    const firstName = nameParts[0];
-    const lastName = nameParts.slice(1).join(' ') || '';
 
     const leadNumber = await this.generateNextLeadNumber();
 
@@ -666,12 +664,14 @@ export class TrackerService {
       brochureLinkToken = token;
     }
 
-    // Enqueue welcome communication
-    await this.communicationService.enqueue(newLead.id, CommunicationChannel.EMAIL, 'WELCOME', {}, 'TrackerService');
-
-    if (brochureLinkToken) {
-      await this.communicationService.enqueue(newLead.id, CommunicationChannel.EMAIL, 'BROCHURE', { brochureLink: brochureLinkToken }, 'TrackerService');
-    }
+    // Enqueue welcome_brochure communication
+    await this.communicationService.enqueue(
+      newLead.id,
+      CommunicationChannel.EMAIL,
+      'WELCOME_BROCHURE',
+      { brochureLink: brochureLinkToken || '' },
+      'TrackerService'
+    );
 
     return { lead: newLead, created: true };
   }
