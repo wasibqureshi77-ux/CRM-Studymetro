@@ -12,6 +12,9 @@ import { ApplicationModule } from './modules/application/application.module';
 import { CommunicationModule } from './modules/communication/communication.module';
 import { BrochureModule } from './modules/brochure/brochure.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { StudentPortalModule } from './modules/student-portal/student-portal.module';
+import { APP_GUARD } from '@nestjs/core';
+import { RolesGuard } from './modules/auth/guards/roles.guard';
 
 @Module({
   imports: [
@@ -30,11 +33,18 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     CommunicationModule,
     BrochureModule,
     AnalyticsModule,
+    StudentPortalModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // Apply Tenant resolution middleware globally to all routes
+    // Apply Tenant resolution globally to all routes
     consumer
       .apply(TenantMiddleware)
       .forRoutes('*');

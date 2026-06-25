@@ -21,10 +21,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { BrochureService } from './brochure.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../auth/guards/permissions.guard';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole, LeadCategory } from '@prisma/client';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
-import { LeadCategory } from '@prisma/client';
 
 const UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads');
 
@@ -34,8 +34,8 @@ export class BrochureController {
 
   // ================= ADMIN ENDPOINTS =================
 
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('leads:write')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
   @Post()
   @UseInterceptors(FileInterceptor('file'))
   async create(
@@ -50,15 +50,15 @@ export class BrochureController {
     return this.brochureService.createBrochure(title, cat, file);
   }
 
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('leads:read')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
   @Get()
   async findAll() {
     return this.brochureService.findAll();
   }
 
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('leads:write')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -67,15 +67,15 @@ export class BrochureController {
     return this.brochureService.update(id, body);
   }
 
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('leads:write')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
   @Delete(':id')
   async delete(@Param('id') id: string) {
     return this.brochureService.delete(id);
   }
 
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('leads:write')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
   @Post('assign')
   async assign(
     @Req() req: AuthenticatedRequest,
@@ -88,8 +88,8 @@ export class BrochureController {
     return this.brochureService.assignBrochure(body.leadId, body.brochureId, actorId);
   }
 
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('leads:read')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
   @Get('assignments/lead/:leadId')
   async getLeadAssignments(@Param('leadId') leadId: string) {
     return this.brochureService.getLeadAssignments(leadId);

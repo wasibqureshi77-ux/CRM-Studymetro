@@ -1,5 +1,5 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 
 @Injectable()
 export class BranchGuard implements CanActivate {
@@ -11,8 +11,8 @@ export class BranchGuard implements CanActivate {
       return false;
     }
 
-    // Super Admin and Tenant Admin bypass branch restrictions
-    if (user.role === Role.SUPER_ADMIN || user.role === Role.TENANT_ADMIN) {
+    // Super Admin bypasses branch restrictions
+    if (user.role === UserRole.SUPER_ADMIN) {
       return true;
     }
 

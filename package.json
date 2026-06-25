@@ -5,13 +5,16 @@
   "description": "Study Metro CRM & Analytics Platform Monorepo",
   "workspaces": [
     "apps/web",
-    "apps/api"
+    "apps/api",
+    "apps/student"
   ],
   "scripts": {
     "dev:api": "npm run start:dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",
+    "dev:student": "npm run dev -w apps/student",
     "build:api": "npm run build -w apps/api",
     "build:web": "npm run build -w apps/web",
+    "build:student": "npm run build -w apps/student",
     "prisma:generate": "npm run prisma:generate -w apps/api",
     "prisma:push": "npm run prisma:push -w apps/api",
     "prisma:migrate": "npm run prisma:migrate -w apps/api",

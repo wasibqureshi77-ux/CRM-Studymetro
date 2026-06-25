@@ -2,10 +2,12 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req 
 import { CommunicationService } from './communication.service';
 import { EmailService } from './email.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CommunicationChannel } from '@prisma/client';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole, CommunicationChannel } from '@prisma/client';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('api/v1/communication')
 export class CommunicationController {
   constructor(
@@ -14,11 +16,13 @@ export class CommunicationController {
   ) {}
 
   @Get('templates')
+  @Roles(UserRole.SUPER_ADMIN)
   async getAllTemplates() {
     return this.communicationService.getAllTemplates();
   }
 
   @Post('templates')
+  @Roles(UserRole.SUPER_ADMIN)
   async createTemplate(
     @Body() body: { name: string; channel: CommunicationChannel; subject?: string; content: string; htmlContent?: string; isActive?: boolean }
   ) {
@@ -26,6 +30,7 @@ export class CommunicationController {
   }
 
   @Put('templates/:id')
+  @Roles(UserRole.SUPER_ADMIN)
   async updateTemplate(
     @Param('id') id: string,
     @Body() body: { name?: string; channel?: CommunicationChannel; subject?: string; content?: string; htmlContent?: string; isActive?: boolean }
@@ -34,6 +39,7 @@ export class CommunicationController {
   }
 
   @Delete('templates/:id')
+  @Roles(UserRole.SUPER_ADMIN)
   async deleteTemplate(@Param('id') id: string) {
     return this.communicationService.deleteTemplate(id);
   }
@@ -73,18 +79,21 @@ export class CommunicationController {
 
   // SMTP Settings Endpoints
   @Get('settings')
+  @Roles(UserRole.SUPER_ADMIN)
   async getSettings(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId || 'studymetro-global';
     return this.communicationService.getSettings(tenantId);
   }
 
   @Post('settings')
+  @Roles(UserRole.SUPER_ADMIN)
   async saveSettings(@Req() req: AuthenticatedRequest, @Body() body: any) {
     const tenantId = req.tenantId || 'studymetro-global';
     return this.communicationService.saveSettings(tenantId, body);
   }
 
   @Post('settings/test-connection')
+  @Roles(UserRole.SUPER_ADMIN)
   async testConnection(@Req() req: AuthenticatedRequest, @Body() body: any) {
     const tenantId = req.tenantId || 'studymetro-global';
     
@@ -110,6 +119,7 @@ export class CommunicationController {
   }
 
   @Post('settings/test-email')
+  @Roles(UserRole.SUPER_ADMIN)
   async sendTestEmail(@Req() req: AuthenticatedRequest, @Body() body: any) {
     const tenantId = req.tenantId || 'studymetro-global';
 

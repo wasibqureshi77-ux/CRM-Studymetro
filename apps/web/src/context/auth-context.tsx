@@ -11,6 +11,7 @@ export interface UserProfile {
   role: string;
   tenantId: string;
   branchId?: string;
+  permissions?: string[];
 }
 
 interface AuthContextType {
@@ -64,6 +65,7 @@ function decodeJwt(token: string) {
       role: decoded.role,
       tenantId: decoded.tenantId,
       branchId: decoded.branchId,
+      permissions: decoded.permissions || [],
     };
   } catch (e) {
     return null;
@@ -113,8 +115,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const hasPermission = (permission: string): boolean => {
-    // Single User Mode: Unrestricted access to all UI modules/actions
-    return true;
+    if (!user) return false;
+    if (user.role === 'SUPER_ADMIN') return true;
+    if (user.role === 'COUNSELLOR') {
+      const allowed = [
+        'Dashboard.View',
+        'Lead.View',
+        'Lead.Create',
+        'Lead.Edit',
+        'Followup.View',
+        'Followup.Create',
+        'Followup.Edit',
+        'Communication.View'
+      ];
+      return allowed.includes(permission);
+    }
+    return false;
   };
 
   return (

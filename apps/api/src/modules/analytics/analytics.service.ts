@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LeadCategory, LeadStatus, FollowupStatus, DocumentStatus, QueueStatus, CommunicationChannel } from '@prisma/client';
+import { LeadCategory, LeadStatus, FollowupStatus, DocumentStatus, QueueStatus, CommunicationChannel, UserRole } from '@prisma/client';
 
 @Injectable()
 export class AnalyticsService {
@@ -509,7 +509,7 @@ export class AnalyticsService {
     const counsellors = await this.prisma.user.findMany({
       where: {
         isActive: true,
-        role: { in: ['AGENT', 'BRANCH_MANAGER', 'TENANT_ADMIN'] }
+        role: { in: [UserRole.COUNSELLOR, UserRole.SUPER_ADMIN] }
       },
       select: {
         id: true,

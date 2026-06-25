@@ -15,10 +15,12 @@ import * as fs from 'fs';
 import { AnalyticsService } from './analytics.service';
 import { ExportService } from './export.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../auth/guards/permissions.guard';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.SUPER_ADMIN)
 @Controller('api/v1/analytics')
 export class AnalyticsController {
   constructor(
@@ -26,7 +28,6 @@ export class AnalyticsController {
     private readonly exportService: ExportService
   ) {}
 
-  @Permissions('leads:read')
   @Get('summary')
   async getSummary(
     @Query('startDate') startDate?: string,
@@ -34,8 +35,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getSummary(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('lead-sources')
   async getLeadSources(
     @Query('startDate') startDate?: string,
@@ -43,8 +42,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getLeadSources(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('categories')
   async getCategories(
     @Query('startDate') startDate?: string,
@@ -52,8 +49,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getCategories(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('countries')
   async getCountries(
     @Query('startDate') startDate?: string,
@@ -61,8 +56,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getCountries(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('followups')
   async getFollowups(
     @Query('startDate') startDate?: string,
@@ -70,8 +63,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getFollowups(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('documents')
   async getDocuments(
     @Query('startDate') startDate?: string,
@@ -79,8 +70,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getDocuments(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('communications')
   async getCommunications(
     @Query('startDate') startDate?: string,
@@ -88,8 +77,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getCommunications(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('brochures')
   async getBrochures(
     @Query('startDate') startDate?: string,
@@ -97,8 +84,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getBrochures(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('funnel')
   async getFunnel(
     @Query('startDate') startDate?: string,
@@ -106,8 +91,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getFunnel(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('revenue')
   async getRevenue(
     @Query('startDate') startDate?: string,
@@ -115,8 +98,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getRevenue(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('counsellors')
   async getCounsellors(
     @Query('startDate') startDate?: string,
@@ -124,8 +105,6 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getCounsellors(startDate, endDate);
   }
-
-  @Permissions('leads:read')
   @Get('lead-aging')
   async getLeadAging(
     @Query('startDate') startDate?: string,
@@ -135,8 +114,6 @@ export class AnalyticsController {
   }
 
   // ================= EXPORTS ENGINE =================
-
-  @Permissions('leads:read')
   @Post('exports/:reportType')
   async exportReport(
     @Param('reportType') reportType: string,
@@ -223,7 +200,6 @@ export class AnalyticsController {
       downloadUrl: `${apiBase}/api/v1/analytics/exports/download/${filename}`
     };
   }
-
   @Get('exports/download/:filename')
   async downloadExportFile(
     @Param('filename') filename: string,

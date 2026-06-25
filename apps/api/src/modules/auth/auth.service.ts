@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { Role } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -16,11 +16,18 @@ export class AuthService {
       where: {
         email,
         tenantId,
-        isActive: true,
       },
     });
 
-    if (user && (await bcrypt.compare(pass, user.passwordHash))) {
+    if (!user) {
+      return null;
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Your account has been disabled. Please contact the administrator.');
+    }
+
+    if (await bcrypt.compare(pass, user.passwordHash)) {
       const { passwordHash, ...result } = user;
       return result;
     }
@@ -36,6 +43,7 @@ export class AuthService {
       role: user.role,
       firstName: user.firstName,
       lastName: user.lastName,
+      permissions: [],
     };
 
     return {
@@ -48,16 +56,18 @@ export class AuthService {
         role: user.role,
         tenantId: user.tenantId,
         branchId: user.branchId,
+        permissions: [],
       }
     };
   }
+
 
   async register(data: {
     email: string;
     pass: string;
     firstName: string;
     lastName: string;
-    role: Role;
+    role: UserRole;
     tenantId: string;
     branchId?: string;
   }) {

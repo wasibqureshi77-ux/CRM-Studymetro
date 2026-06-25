@@ -2,24 +2,19 @@ import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards } from '@nest
 import { FollowupService } from './followup.service';
 import { CreateFollowupDto, UpdateFollowupStatusDto, RescheduleFollowupDto } from './dto/followup.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../auth/guards/permissions.guard';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
 
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('api/v1/followups')
 export class FollowupController {
   constructor(private readonly followupService: FollowupService) {}
-
-  @Permissions('followup:write')
   @Post()
   async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateFollowupDto) {
     const tenantId = req.tenantId!;
     const actorId = req.user!.id;
     return this.followupService.create(dto, tenantId, actorId);
   }
-
-  @Permissions('followup:write')
   @Patch(':id/status')
   async updateStatus(
     @Req() req: AuthenticatedRequest,
@@ -30,8 +25,6 @@ export class FollowupController {
     const actorId = req.user!.id;
     return this.followupService.updateStatus(id, dto, tenantId, actorId);
   }
-
-  @Permissions('followup:write')
   @Patch(':id/reschedule')
   async reschedule(
     @Req() req: AuthenticatedRequest,
@@ -42,19 +35,18 @@ export class FollowupController {
     const actorId = req.user!.id;
     return this.followupService.reschedule(id, dto, tenantId, actorId);
   }
-
-  @Permissions('followup:read')
   @Get('my')
   async getMyFollowups(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId!;
     const userId = req.user!.id;
     return this.followupService.findAllForUser(userId, tenantId);
   }
-
-  @Permissions('followup:read')
   @Get()
   async getFollowups(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId!;
+    if (req.user!.role === 'COUNSELLOR') {
+      return this.followupService.findAllForUser(req.user!.id, tenantId);
+    }
     return this.followupService.findAllForTenant(tenantId);
   }
 }

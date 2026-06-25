@@ -67,42 +67,71 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span>Study Metro CRM</span>
         </div>
         <ul className="sidebar-menu">
-          <li className={`sidebar-item ${pathname === '/dashboard' ? 'active' : ''}`}>
-            <a href="/dashboard">🏠 Dashboard</a>
-          </li>
-          <li className={`sidebar-item ${pathname === '/dashboard/pipeline' ? 'active' : ''}`}>
-            <a href="/dashboard/pipeline">📋 Pipeline Board</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/leads') ? 'active' : ''}`}>
-            <a href="/dashboard/leads">👨‍🎓 Leads</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/followups') ? 'active' : ''}`}>
-            <a href="/dashboard/followups">📅 Followups</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/documents') ? 'active' : ''}`}>
-            <a href="/dashboard/documents">📄 Documents</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/activities') ? 'active' : ''}`}>
-            <a href="/dashboard/activities">📞 Activities</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/reports') ? 'active' : ''}`}>
-            <a href="/dashboard/reports">📊 Reports</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/settings') ? 'active' : ''}`}>
-            <a href="/dashboard/settings">⚙️ Settings</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/communication-templates') ? 'active' : ''}`}>
-            <a href="/dashboard/communication-templates">💬 Communication Templates</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/communication-settings') ? 'active' : ''}`}>
-            <a href="/dashboard/communication-settings">⚙️ Communication Settings</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/brochure-library') ? 'active' : ''}`}>
-            <a href="/dashboard/brochure-library">📚 Brochure Library</a>
-          </li>
-          <li className={`sidebar-item ${pathname?.startsWith('/dashboard/reports-analytics') ? 'active' : ''}`}>
-            <a href="/dashboard/reports-analytics">📊 Reports & Analytics</a>
-          </li>
+          {hasPermission('Dashboard.View') && (
+            <li className={`sidebar-item ${pathname === '/dashboard' ? 'active' : ''}`}>
+              <a href="/dashboard">🏠 Dashboard</a>
+            </li>
+          )}
+          {hasPermission('Lead.View') && (
+            <li className={`sidebar-item ${pathname === '/dashboard/pipeline' ? 'active' : ''}`}>
+              <a href="/dashboard/pipeline">📋 Pipeline Board</a>
+            </li>
+          )}
+          {hasPermission('Lead.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/leads') ? 'active' : ''}`}>
+              <a href="/dashboard/leads">👨‍🎓 Leads</a>
+            </li>
+          )}
+          {hasPermission('Followup.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/followups') ? 'active' : ''}`}>
+              <a href="/dashboard/followups">📅 Followups</a>
+            </li>
+          )}
+          {hasPermission('Document.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/documents') ? 'active' : ''}`}>
+              <a href="/dashboard/documents">📄 Documents</a>
+            </li>
+          )}
+          {hasPermission('Activities.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/activities') ? 'active' : ''}`}>
+              <a href="/dashboard/activities">📞 Activities</a>
+            </li>
+          )}
+          {hasPermission('Reports.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/reports') ? 'active' : ''}`}>
+              <a href="/dashboard/reports">📊 Reports</a>
+            </li>
+          )}
+          {hasPermission('Users.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/users') ? 'active' : ''}`}>
+              <a href="/dashboard/users">👥 Users</a>
+            </li>
+          )}
+          {hasPermission('Settings.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/settings') ? 'active' : ''}`}>
+              <a href="/dashboard/settings">⚙️ Settings</a>
+            </li>
+          )}
+          {hasPermission('Communication.Template') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/communication-templates') ? 'active' : ''}`}>
+              <a href="/dashboard/communication-templates">💬 Communication Templates</a>
+            </li>
+          )}
+          {hasPermission('Communication.Settings') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/communication-settings') ? 'active' : ''}`}>
+              <a href="/dashboard/communication-settings">⚙️ Communication Settings</a>
+            </li>
+          )}
+          {hasPermission('Brochure.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/brochure-library') ? 'active' : ''}`}>
+              <a href="/dashboard/brochure-library">📚 Brochure Library</a>
+            </li>
+          )}
+          {hasPermission('Analytics.View') && (
+            <li className={`sidebar-item ${pathname?.startsWith('/dashboard/reports-analytics') ? 'active' : ''}`}>
+              <a href="/dashboard/reports-analytics">📊 Reports & Analytics</a>
+            </li>
+          )}
         </ul>
         <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
           <button onClick={logout} className="btn btn-danger btn-sm" style={{ width: '100%' }}>
@@ -147,7 +176,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span style={{ fontWeight: 600 }}>
                 {user.firstName} {user.lastName}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Administrator</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                {user.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Counsellor'}
+              </span>
             </div>
           </div>
         </header>

@@ -22,13 +22,16 @@ jobs:
         run: npm ci
 
       - name: Generate Prisma Client
-        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+        run: npm run prisma:generate
 
       - name: Build API (NestJS)
         run: npm run build:api
 
-      - name: Build Web (Next.js)
+      - name: Build CRM (apps/web)
         run: npm run build:web
+
+      - name: Build Student Portal (apps/student)
+        run: npm run build:student
 
       - name: Execute remote deploy script via SSH
         uses: appleboy/ssh-action@v1.0.3

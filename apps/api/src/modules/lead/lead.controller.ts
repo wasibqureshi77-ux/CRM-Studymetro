@@ -1,19 +1,32 @@
-import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards, Query, ForbiddenException } from '@nestjs/common';
 import { LeadService } from './lead.service';
 import { CreateLeadDto, UpdateLeadDto, AssignLeadDto, CreateNoteDto, BulkAssignLeadDto, BulkStatusUpdateLeadDto, MergeLeadDto } from './dto/lead.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { BranchGuard } from '../auth/guards/branch.guard';
-import { Permissions } from '../auth/decorators/permissions.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
-import { LeadStatus, LeadSource, LeadCategory } from '@prisma/client';
+import { LeadStatus, LeadSource, LeadCategory, UserRole } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
 
-@UseGuards(JwtAuthGuard, PermissionsGuard, BranchGuard)
+const LOCKED_STAGES = [
+  'DOCUMENTS_PENDING',
+  'DOCUMENTS_RECEIVED',
+  'UNIVERSITY_APPLIED',
+  'OFFER_LETTER',
+  'VISA_PROCESS',
+  'ADMISSION_CLOSED',
+  'COMPLETED'
+];
+
+@UseGuards(JwtAuthGuard, RolesGuard, BranchGuard)
 @Controller('api/v1/leads')
 export class LeadController {
-  constructor(private readonly leadService: LeadService) {}
+  constructor(
+    private readonly leadService: LeadService,
+    private readonly prisma: PrismaService
+  ) {}
 
-  @Permissions('leads:write')
   @Post()
   async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateLeadDto) {
     const tenantId = req.tenantId!;
@@ -21,7 +34,6 @@ export class LeadController {
     return this.leadService.create(dto, tenantId, actorId);
   }
 
-  @Permissions('leads:write')
   @Post('merge')
   async merge(
     @Req() req: AuthenticatedRequest,
@@ -29,10 +41,19 @@ export class LeadController {
   ) {
     const tenantId = req.tenantId!;
     const actorId = req.user!.id;
+    if (req.user!.role === UserRole.COUNSELLOR) {
+      const primaryLead = await this.prisma.lead.findUnique({ where: { id: dto.primaryId } });
+      const duplicateLead = await this.prisma.lead.findUnique({ where: { id: dto.duplicateId } });
+      if (
+        (primaryLead && LOCKED_STAGES.includes(primaryLead.status)) ||
+        (duplicateLead && LOCKED_STAGES.includes(duplicateLead.status))
+      ) {
+        throw new ForbiddenException('Counsellors cannot merge leads in or after the Documents Pending stage.');
+      }
+    }
     return this.leadService.merge(dto.primaryId, dto.duplicateId, tenantId, actorId);
   }
 
-  @Permissions('leads:write')
   @Patch('bulk-assign')
   async bulkAssign(
     @Req() req: AuthenticatedRequest,
@@ -40,10 +61,20 @@ export class LeadController {
   ) {
     const tenantId = req.tenantId!;
     const actorId = req.user!.id;
+    if (req.user!.role === UserRole.COUNSELLOR) {
+      const lockedLeads = await this.prisma.lead.findMany({
+        where: {
+          id: { in: dto.leadIds },
+          status: { in: LOCKED_STAGES as LeadStatus[] }
+        }
+      });
+      if (lockedLeads.length > 0) {
+        throw new ForbiddenException('Counsellors cannot reassign leads in or after the Documents Pending stage.');
+      }
+    }
     return this.leadService.bulkAssign(dto.leadIds, dto.assigneeId, dto.branchId, tenantId, actorId);
   }
 
-  @Permissions('leads:write')
   @Patch('bulk-status')
   async bulkStatusUpdate(
     @Req() req: AuthenticatedRequest,
@@ -51,10 +82,20 @@ export class LeadController {
   ) {
     const tenantId = req.tenantId!;
     const actorId = req.user!.id;
+    if (req.user!.role === UserRole.COUNSELLOR) {
+      const lockedLeads = await this.prisma.lead.findMany({
+        where: {
+          id: { in: dto.leadIds },
+          status: { in: LOCKED_STAGES as LeadStatus[] }
+        }
+      });
+      if (lockedLeads.length > 0) {
+        throw new ForbiddenException('Counsellors cannot change status of leads in or after the Documents Pending stage.');
+      }
+    }
     return this.leadService.bulkStatusUpdate(dto.leadIds, dto.status, tenantId, actorId);
   }
 
-  @Permissions('leads:read')
   @Get()
   async findAll(
     @Req() req: AuthenticatedRequest,
@@ -97,11 +138,11 @@ export class LeadController {
       appIntake,
       applicationStatus,
       offerStatus,
-      visaStatus
+      visaStatus,
+      assigneeId: req.user!.role === UserRole.COUNSELLOR ? req.user!.id : undefined
     });
   }
 
-  @Permissions('leads:read')
   @Get('meta/activities')
   async findActivities(
     @Req() req: AuthenticatedRequest,
@@ -110,38 +151,44 @@ export class LeadController {
     @Query('date') date?: string
   ) {
     const tenantId = req.tenantId!;
-    return this.leadService.findActivities(tenantId, { leadId, activityType, date });
+    const assigneeId = req.user!.role === UserRole.COUNSELLOR ? req.user!.id : undefined;
+    return this.leadService.findActivities(tenantId, { leadId, activityType, date, assigneeId });
   }
 
-  @Permissions('leads:read')
   @Get('meta/users')
   async getUsers(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId!;
     return this.leadService.getUsers(tenantId);
   }
 
-  @Permissions('leads:read')
   @Get('meta/branches')
   async getBranches(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId!;
     return this.leadService.getBranches(tenantId);
   }
 
-  @Permissions('leads:read')
   @Get(':id')
   async findOne(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     const tenantId = req.tenantId!;
-    return this.leadService.findOne(id, tenantId);
+    const lead = await this.leadService.findOne(id, tenantId);
+    if (req.user!.role === UserRole.COUNSELLOR && lead.assigneeId !== req.user!.id) {
+      throw new ForbiddenException('You do not have access to this lead.');
+    }
+    return lead;
   }
 
-  @Permissions('leads:read')
   @Get(':id/timeline')
   async getTimeline(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     const tenantId = req.tenantId!;
+    if (req.user!.role === UserRole.COUNSELLOR) {
+      const lead = await this.prisma.lead.findUnique({ where: { id } });
+      if (!lead || lead.assigneeId !== req.user!.id) {
+        throw new ForbiddenException('You do not have access to this lead timeline.');
+      }
+    }
     return this.leadService.getTimeline(id, tenantId);
   }
 
-  @Permissions('leads:write')
   @Patch(':id')
   async update(
     @Req() req: AuthenticatedRequest,
@@ -150,10 +197,37 @@ export class LeadController {
   ) {
     const tenantId = req.tenantId!;
     const actorId = req.user!.id;
+
+    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    if (!lead) {
+      throw new ForbiddenException('Lead not found');
+    }
+
+    if (req.user!.role === UserRole.COUNSELLOR) {
+      if (lead.assigneeId !== req.user!.id) {
+        throw new ForbiddenException('You do not have access to this lead.');
+      }
+
+      const updateDto = dto as any;
+      if (updateDto.assigneeId !== undefined && updateDto.assigneeId !== lead.assigneeId) {
+        throw new ForbiddenException('Counsellors cannot change lead assignee/ownership.');
+      }
+
+      if (LOCKED_STAGES.includes(lead.status)) {
+        // After DOCUMENTS_PENDING: only allow basic details: firstName, lastName, email, phone, address
+        const allowedKeys = ['firstName', 'lastName', 'email', 'phone', 'address'];
+        const keysToUpdate = Object.keys(dto).filter(key => updateDto[key] !== undefined && updateDto[key] !== null);
+        const disallowedKeys = keysToUpdate.filter(key => !allowedKeys.includes(key));
+        
+        if (disallowedKeys.length > 0) {
+          throw new ForbiddenException(`Counsellors cannot modify post-document processing fields (${disallowedKeys.join(', ')}) after Documents Pending stage.`);
+        }
+      }
+    }
+
     return this.leadService.update(id, dto, tenantId, actorId);
   }
 
-  @Permissions('leads:write')
   @Patch(':id/assign')
   async assign(
     @Req() req: AuthenticatedRequest,
@@ -162,10 +236,12 @@ export class LeadController {
   ) {
     const tenantId = req.tenantId!;
     const actorId = req.user!.id;
+    if (req.user!.role === UserRole.COUNSELLOR) {
+      throw new ForbiddenException('Only Super Admin can assign or change counsellor.');
+    }
     return this.leadService.assign(id, dto, tenantId, actorId);
   }
 
-  @Permissions('leads:write')
   @Post(':id/notes')
   async addNote(
     @Req() req: AuthenticatedRequest,

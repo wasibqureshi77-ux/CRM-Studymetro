@@ -1,4 +1,4 @@
-import { PrismaClient, Role, LeadStatus, LeadSource, CommunicationChannel, QueueStatus } from '@prisma/client';
+import { PrismaClient, UserRole, LeadStatus, LeadSource, CommunicationChannel, QueueStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -19,7 +19,7 @@ async function runVerification() {
         firstName: 'System',
         lastName: 'Admin',
         passwordHash: 'dummy',
-        role: Role.SUPER_ADMIN
+        role: UserRole.SUPER_ADMIN
       }
     });
   }

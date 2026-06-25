@@ -3,7 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
-import { Role } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 
 @Controller('api/v1/auth')
 export class AuthController {
@@ -23,7 +23,7 @@ export class AuthController {
       pass: string;
       firstName: string;
       lastName: string;
-      role: Role;
+      role: UserRole;
       branchId?: string;
     }
   ) {

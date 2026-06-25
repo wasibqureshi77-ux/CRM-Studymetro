@@ -58,6 +58,10 @@ export class CreateLeadDto {
   phone?: string;
 
   @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
   @IsEnum(LeadSource)
   source?: LeadSource;
 
@@ -119,6 +123,10 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
 
   @IsOptional()
   @IsEnum(LeadStatus)

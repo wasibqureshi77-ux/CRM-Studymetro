@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
-import { FollowupStatus, Role } from '@prisma/client';
+import { FollowupStatus, UserRole } from '@prisma/client';
 
 @Injectable()
 export class FollowupReminderService implements OnModuleInit, OnModuleDestroy {
@@ -78,12 +78,12 @@ export class FollowupReminderService implements OnModuleInit, OnModuleDestroy {
           `You missed a scheduled followup for lead ${followup.lead.firstName || ''} ${followup.lead.lastName || ''} (scheduled at ${followup.followupDate.toLocaleString()}).`
         );
 
-        // Notify Branch Managers
+        // Notify Branch Super Admins
         if (followup.lead.branchId) {
           const branchManagers = await this.prisma.user.findMany({
             where: {
               branchId: followup.lead.branchId,
-              role: Role.BRANCH_MANAGER,
+              role: UserRole.SUPER_ADMIN,
               isActive: true
             }
           });

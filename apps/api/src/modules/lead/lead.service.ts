@@ -70,6 +70,31 @@ export class LeadService {
     return `SM${nextNum}`;
   }
 
+  private async generateNextStudentPortalId() {
+    const currentYear = new Date().getFullYear().toString().slice(-2);
+    const prefix = `STD${currentYear}`;
+
+    const lastLead = await this.prisma.lead.findFirst({
+      where: {
+        studentPortalId: {
+          startsWith: prefix,
+        },
+      },
+      orderBy: {
+        studentPortalId: 'desc',
+      },
+    });
+
+    if (lastLead && lastLead.studentPortalId) {
+      const lastNumStr = lastLead.studentPortalId.replace(prefix, '');
+      const lastNum = parseInt(lastNumStr, 10);
+      const nextNum = lastNum + 1;
+      return `${prefix}${nextNum.toString().padStart(4, '0')}`;
+    }
+
+    return `${prefix}0001`;
+  }
+
   async create(dto: CreateLeadDto, tenantId: string, actorId: string) {
     const leadNumber = await this.generateNextLeadNumber();
     const normEmail = this.normalizeEmail(dto.email);
@@ -191,6 +216,12 @@ export class LeadService {
       }
     }
 
+    const status = (dto as any).status || LeadStatus.NEW_LEAD;
+    let studentPortalId = null;
+    if (status === LeadStatus.ENROLLED) {
+      studentPortalId = await this.generateNextStudentPortalId();
+    }
+
     const lead = await this.prisma.lead.create({
       data: {
         tenantId,
@@ -201,9 +232,11 @@ export class LeadService {
         normalizedEmail: normEmail,
         phone: dto.phone,
         normalizedPhone: normPhone,
+        address: dto.address,
         leadNumber,
+        studentPortalId,
         source: dto.source,
-        status: LeadStatus.NEW_LEAD,
+        status,
         submissionCount: 1,
         leadCategory: category,
         preferredCountry: prefCountry || null,
@@ -344,6 +377,7 @@ export class LeadService {
       applicationStatus?: string;
       offerStatus?: string;
       visaStatus?: string;
+      assigneeId?: string;
     }
   ) {
     const searchConditions: any[] = [];
@@ -381,6 +415,7 @@ export class LeadService {
         branchId: filters.branchId,
         source: filters.source,
         leadCategory: filters.leadCategory,
+        assigneeId: filters.assigneeId,
         preferredCountry: filters.targetCountry ? { contains: filters.targetCountry, mode: 'insensitive' } : undefined,
         intendedIntake: filters.intake ? { contains: filters.intake, mode: 'insensitive' } : undefined,
         targetScore: filters.targetScore ? { contains: filters.targetScore, mode: 'insensitive' } : undefined,
@@ -460,6 +495,11 @@ export class LeadService {
     const intIntake = dto.intendedIntake || dto.studentProfile?.intake;
     const targetCourse = dto.leadCategory || dto.studentProfile?.targetCourse;
 
+    let studentPortalId = undefined;
+    if (dto.status === 'ENROLLED' && !lead.studentPortalId) {
+      studentPortalId = await this.generateNextStudentPortalId();
+    }
+
     const updated = await this.prisma.lead.update({
       where: { id },
       data: {
@@ -469,7 +509,9 @@ export class LeadService {
         normalizedEmail: normEmail,
         phone: dto.phone,
         normalizedPhone: normPhone,
+        address: dto.address,
         status: dto.status,
+        studentPortalId,
         source: dto.source,
         leadCategory: category,
         preferredCountry: dto.preferredCountry,
@@ -662,12 +704,13 @@ export class LeadService {
 
   async findActivities(
     tenantId: string,
-    filters: { leadId?: string; activityType?: string; date?: string }
+    filters: { leadId?: string; activityType?: string; date?: string; assigneeId?: string }
   ) {
     const whereClause: any = {
       lead: {
         tenantId,
-        deletedAt: null
+        deletedAt: null,
+        assigneeId: filters.assigneeId
       }
     };
 

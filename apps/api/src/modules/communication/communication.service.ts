@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CommunicationChannel, QueueStatus } from '@prisma/client';
 import { EmailService } from './email.service';
 import { encrypt, decrypt } from '../../common/utils/crypto.util';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class CommunicationService implements OnModuleInit {
@@ -293,7 +294,7 @@ export class CommunicationService implements OnModuleInit {
       console.log(`Processing ${pendingItems.length} pending communication items...`);
 
       for (const item of pendingItems) {
-
+        let textMessage = '';
         try {
           const lead = await this.prisma.lead.findUnique({
             where: { id: item.leadId },
@@ -341,7 +342,7 @@ export class CommunicationService implements OnModuleInit {
           }
 
           // Resolve plain content variables
-          let textMessage = template.content;
+          textMessage = template.content;
           textMessage = textMessage.replace(/\{\{name\}\}/g, name);
           textMessage = textMessage.replace(/\{\{leadId\}\}/g, lead.id);
           textMessage = textMessage.replace(/\{\{leadNumber\}\}/g, lead.leadNumber || lead.id);
@@ -365,6 +366,28 @@ export class CommunicationService implements OnModuleInit {
             htmlMessage = htmlMessage.replace(/\{\{course\}\}/g, course);
             htmlMessage = htmlMessage.replace(/\{\{counsellor\}\}/g, counsellor);
             htmlMessage = htmlMessage.replace(/\{\{brochureLink\}\}/g, brochureLink);
+          }
+
+          // Generate student magic link if lead has studentPortalId
+          if (lead.studentPortalId) {
+            const token = crypto.randomBytes(32).toString('hex');
+            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+            
+            await this.prisma.lead.update({
+              where: { id: lead.id },
+              data: {
+                studentMagicToken: token,
+                studentMagicExpiresAt: expiresAt,
+              },
+            });
+
+            const studentPortalUrl = process.env.STUDENT_PORTAL_URL || 'http://localhost:3001';
+            const callbackLink = `${studentPortalUrl}/login/callback?token=${token}`;
+            
+            textMessage += `\n\nOpen Student Portal: ${callbackLink}`;
+            if (htmlMessage) {
+              htmlMessage += `<p><a href="${callbackLink}" style="padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px;">Open Student Portal</a></p><p>Or copy this URL: ${callbackLink}</p>`;
+            }
           }
 
           const recipient = item.channel === CommunicationChannel.EMAIL ? lead.email : lead.phone;
@@ -420,7 +443,7 @@ export class CommunicationService implements OnModuleInit {
               eventType: item.eventType,
               status: QueueStatus.FAILED,
               recipient: item.channel === CommunicationChannel.EMAIL ? 'Email address not resolved' : 'Phone number not resolved',
-              message: `Error: ${itemError.message}`,
+              message: `Error: ${itemError.message}\n\nAttempted Message:\n${textMessage}`,
             },
           });
 
@@ -594,6 +617,11 @@ export class CommunicationService implements OnModuleInit {
           enabled: data.enabled !== undefined ? data.enabled : true,
           emailEnabled: data.emailEnabled !== undefined ? data.emailEnabled : true,
           whatsappEnabled: data.whatsappEnabled !== undefined ? data.whatsappEnabled : false,
+          studentPortalLoginEnabled: data.studentPortalLoginEnabled !== undefined ? data.studentPortalLoginEnabled : undefined,
+          studentMagicLinkEnabled: data.studentMagicLinkEnabled !== undefined ? data.studentMagicLinkEnabled : undefined,
+          studentEmailOtpEnabled: data.studentEmailOtpEnabled !== undefined ? data.studentEmailOtpEnabled : undefined,
+          studentSmsOtpEnabled: data.studentSmsOtpEnabled !== undefined ? data.studentSmsOtpEnabled : undefined,
+          studentWhatsappOtpEnabled: data.studentWhatsappOtpEnabled !== undefined ? data.studentWhatsappOtpEnabled : undefined,
         }
       });
     } else {
@@ -610,6 +638,11 @@ export class CommunicationService implements OnModuleInit {
           enabled: data.enabled !== undefined ? data.enabled : true,
           emailEnabled: data.emailEnabled !== undefined ? data.emailEnabled : true,
           whatsappEnabled: data.whatsappEnabled !== undefined ? data.whatsappEnabled : false,
+          studentPortalLoginEnabled: data.studentPortalLoginEnabled !== undefined ? data.studentPortalLoginEnabled : true,
+          studentMagicLinkEnabled: data.studentMagicLinkEnabled !== undefined ? data.studentMagicLinkEnabled : true,
+          studentEmailOtpEnabled: data.studentEmailOtpEnabled !== undefined ? data.studentEmailOtpEnabled : true,
+          studentSmsOtpEnabled: data.studentSmsOtpEnabled !== undefined ? data.studentSmsOtpEnabled : false,
+          studentWhatsappOtpEnabled: data.studentWhatsappOtpEnabled !== undefined ? data.studentWhatsappOtpEnabled : false,
         }
       });
     }

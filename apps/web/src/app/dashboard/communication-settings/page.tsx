@@ -16,6 +16,13 @@ export default function CommunicationSettingsPage() {
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
 
+  // Student Portal switches
+  const [studentPortalLoginEnabled, setStudentPortalLoginEnabled] = useState(true);
+  const [studentMagicLinkEnabled, setStudentMagicLinkEnabled] = useState(true);
+  const [studentEmailOtpEnabled, setStudentEmailOtpEnabled] = useState(true);
+  const [studentSmsOtpEnabled, setStudentSmsOtpEnabled] = useState(false);
+  const [studentWhatsappOtpEnabled, setStudentWhatsappOtpEnabled] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -48,6 +55,11 @@ export default function CommunicationSettingsPage() {
         setEnabled(res.enabled !== undefined ? res.enabled : true);
         setEmailEnabled(res.emailEnabled !== undefined ? res.emailEnabled : true);
         setWhatsappEnabled(res.whatsappEnabled !== undefined ? res.whatsappEnabled : false);
+        setStudentPortalLoginEnabled(res.studentPortalLoginEnabled !== undefined ? res.studentPortalLoginEnabled : true);
+        setStudentMagicLinkEnabled(res.studentMagicLinkEnabled !== undefined ? res.studentMagicLinkEnabled : true);
+        setStudentEmailOtpEnabled(res.studentEmailOtpEnabled !== undefined ? res.studentEmailOtpEnabled : true);
+        setStudentSmsOtpEnabled(res.studentSmsOtpEnabled !== undefined ? res.studentSmsOtpEnabled : false);
+        setStudentWhatsappOtpEnabled(res.studentWhatsappOtpEnabled !== undefined ? res.studentWhatsappOtpEnabled : false);
       }
     } catch (err: any) {
       console.error('Failed to load settings', err);
@@ -74,7 +86,12 @@ export default function CommunicationSettingsPage() {
         encryption,
         enabled,
         emailEnabled,
-        whatsappEnabled
+        whatsappEnabled,
+        studentPortalLoginEnabled,
+        studentMagicLinkEnabled,
+        studentEmailOtpEnabled,
+        studentSmsOtpEnabled,
+        studentWhatsappOtpEnabled,
       });
       addToast('success', 'SMTP & Channel Configuration saved successfully!');
       fetchSettings();
@@ -332,6 +349,76 @@ export default function CommunicationSettingsPage() {
                   When disabled, WhatsApp communications should not enter the communication queue.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Student Portal Settings */}
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '8px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px 0' }}>Student Portal Identity Management</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  id="studentPortalLoginEnabledCheckbox"
+                  checked={studentPortalLoginEnabled}
+                  onChange={(e) => setStudentPortalLoginEnabled(e.target.checked)}
+                />
+                <label htmlFor="studentPortalLoginEnabledCheckbox" style={{ fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                  Enable Student Portal Login
+                </label>
+              </div>
+
+              {studentPortalLoginEnabled && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginLeft: '22px', borderLeft: '2px solid var(--border-color)', paddingLeft: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="studentMagicLinkEnabledCheckbox"
+                      checked={studentMagicLinkEnabled}
+                      onChange={(e) => setStudentMagicLinkEnabled(e.target.checked)}
+                    />
+                    <label htmlFor="studentMagicLinkEnabledCheckbox" style={{ fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>
+                      Enable Magic Link (15m expiry)
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="studentEmailOtpEnabledCheckbox"
+                      checked={studentEmailOtpEnabled}
+                      onChange={(e) => setStudentEmailOtpEnabled(e.target.checked)}
+                    />
+                    <label htmlFor="studentEmailOtpEnabledCheckbox" style={{ fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>
+                      Enable Email OTP (6-digit, 5m expiry)
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="studentSmsOtpEnabledCheckbox"
+                      checked={studentSmsOtpEnabled}
+                      onChange={(e) => setStudentSmsOtpEnabled(e.target.checked)}
+                    />
+                    <label htmlFor="studentSmsOtpEnabledCheckbox" style={{ fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>
+                      Enable SMS OTP (Architecture only)
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="studentWhatsappOtpEnabledCheckbox"
+                      checked={studentWhatsappOtpEnabled}
+                      onChange={(e) => setStudentWhatsappOtpEnabled(e.target.checked)}
+                    />
+                    <label htmlFor="studentWhatsappOtpEnabledCheckbox" style={{ fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>
+                      Enable WhatsApp OTP (Architecture only)
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

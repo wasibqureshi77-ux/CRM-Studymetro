@@ -8,12 +8,9 @@ generator client {
   provider = "prisma-client-js"
 }
 
-enum Role {
+enum UserRole {
   SUPER_ADMIN
-  TENANT_ADMIN
-  BRANCH_MANAGER
-  AGENT
-  VIEWER
+  COUNSELLOR
 }
 
 enum LeadStatus {
@@ -151,7 +148,7 @@ model User {
   passwordHash String
   firstName    String
   lastName     String
-  role         Role       @default(AGENT)
+  role         UserRole   @default(COUNSELLOR)
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -160,11 +157,18 @@ model User {
   assignedLeads Lead[]    @relation("LeadAssignee")
   notes        Note[]
   activities   Activity[]
-  followups    Followup[]
+  followups    Followup[] @relation("FollowupAssignee")
+  createdFollowups Followup[] @relation("FollowupCreator")
   approvedDocs LeadDocument[] @relation("DocApprover")
   notifications Notification[]
   sessions     UserSession[]
+
+  fullName     String     @default("")
+  password     String     @default("")
+  phone        String     @default("")
+  designation  String?
 }
+
 
 model Lead {
   id             String      @id @default(uuid())
@@ -178,6 +182,7 @@ model Lead {
   normalizedEmail String?
   phone          String?
   normalizedPhone String?
+  address        String?
   status         LeadStatus  @default(NEW_LEAD)
   source         LeadSource  @default(MANUAL)
   assigneeId     String?
@@ -199,6 +204,14 @@ model Lead {
   courseInterest   String?
   readinessScore Float?
   leadNumber     String?     @unique
+  studentPortalId String?     @unique
+  studentOtpCode  String?
+  studentOtpExpiresAt DateTime?
+  studentOtpAttempts Int     @default(0)
+  studentMagicToken String?   @unique
+  studentMagicExpiresAt DateTime?
+  emergencyContact String?
+  photo            String?
 
   submissions    LeadSubmission[]
   studentProfile StudentProfile?
@@ -290,7 +303,9 @@ model Followup {
   leadId         String
   lead             Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
   assignedUserId String
-  assignedUser   User           @relation(fields: [assignedUserId], references: [id], onDelete: Cascade)
+  assignedUser   User           @relation("FollowupAssignee", fields: [assignedUserId], references: [id], onDelete: Cascade)
+  createdById    String?
+  createdBy      User?          @relation("FollowupCreator", fields: [createdById], references: [id], onDelete: SetNull)
   followupDate   DateTime
   status         FollowupStatus @default(SCHEDULED)
   notes          String?
@@ -299,6 +314,7 @@ model Followup {
 
   @@index([leadId])
   @@index([assignedUserId])
+  @@index([createdById])
   @@index([followupDate])
   @@index([status])
 }
@@ -534,6 +550,11 @@ model EmailSetting {
   enabled         Boolean  @default(true)
   emailEnabled    Boolean  @default(true)
   whatsappEnabled Boolean  @default(false)
+  studentPortalLoginEnabled Boolean @default(true)
+  studentMagicLinkEnabled   Boolean @default(true)
+  studentEmailOtpEnabled     Boolean @default(true)
+  studentSmsOtpEnabled       Boolean @default(false)
+  studentWhatsappOtpEnabled  Boolean @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

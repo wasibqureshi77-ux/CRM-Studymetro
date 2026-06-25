@@ -35,6 +35,7 @@ export class FollowupService {
       data: {
         leadId: dto.leadId,
         assignedUserId: actorId, // default assign to the creator
+        createdById: actorId,
         followupDate: new Date(dto.followupDate),
         notes: dto.notes,
         status: FollowupStatus.SCHEDULED
@@ -128,7 +129,10 @@ export class FollowupService {
   async findAllForUser(userId: string, tenantId: string) {
     return this.prisma.followup.findMany({
       where: {
-        assignedUserId: userId,
+        OR: [
+          { assignedUserId: userId },
+          { createdById: userId }
+        ],
         lead: { tenantId, deletedAt: null }
       },
       include: {

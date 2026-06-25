@@ -1,4 +1,4 @@
-import { PrismaClient, Role, LeadStatus, LeadSource, FollowupStatus } from '@prisma/client';
+import { PrismaClient, UserRole, LeadStatus, LeadSource, FollowupStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -48,8 +48,8 @@ async function main() {
     },
   });
 
-  // 4. Create Users (SuperAdmin Only)
-  console.log('👤 Seeding Users (SuperAdmin Only for Single User Mode)...');
+  // 4. Create Users (SuperAdmin & Counsellor)
+  console.log('👤 Seeding Users (SuperAdmin & Counsellor)...');
   const salt = await bcrypt.genSalt(12);
   const passwordHash = await bcrypt.hash(pass, salt);
 
@@ -58,10 +58,27 @@ async function main() {
       tenantId,
       email: 'superadmin@studymetrojaipur.com',
       passwordHash,
+      password: passwordHash,
       firstName: 'Sarah',
       lastName: 'SuperAdmin',
-      role: Role.SUPER_ADMIN,
+      fullName: 'Sarah SuperAdmin',
+      role: UserRole.SUPER_ADMIN,
       isActive: true,
+    },
+  });
+
+  const counsellor = await prisma.user.create({
+    data: {
+      tenantId,
+      email: 'counsellor@studymetrojaipur.com',
+      passwordHash,
+      password: passwordHash,
+      firstName: 'Jane',
+      lastName: 'Counsellor',
+      fullName: 'Jane Counsellor',
+      role: UserRole.COUNSELLOR,
+      isActive: true,
+      designation: 'Counsellor',
     },
   });
 

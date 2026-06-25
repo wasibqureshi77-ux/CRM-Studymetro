@@ -39,8 +39,18 @@ const validateFollowupDateTime = (dateTimeStr: string): { isValid: boolean; erro
 
 export default function LeadDetailPage() {
   const { id } = useParams();
-  const { hasPermission } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
+
+  const isLockedWorkflow = user?.role === 'COUNSELLOR' && [
+    'DOCUMENTS_PENDING',
+    'DOCUMENTS_RECEIVED',
+    'UNIVERSITY_APPLIED',
+    'OFFER_LETTER',
+    'VISA_PROCESS',
+    'ADMISSION_CLOSED',
+    'COMPLETED'
+  ].includes(lead?.status);
 
   const minDateTime = (() => {
     const now = new Date();
@@ -235,7 +245,7 @@ export default function LeadDetailPage() {
       'VISA_PROCESS',
       'ADMISSION_CLOSED'
     ];
-    if (RESTRICTED_STAGES.includes(lead.status)) {
+    if (!isLockedWorkflow && RESTRICTED_STAGES.includes(lead.status)) {
       const score = lead.readinessScore ?? 0;
       if (score < 100) {
         setErrorMsg(`Cannot change outreach stage to ${lead.status.replace(/_/g, ' ')} until all required documents are 100% verified.`);
@@ -244,34 +254,45 @@ export default function LeadDetailPage() {
     }
 
     try {
-      const updated = await api.patch(`/api/v1/leads/${id}`, {
-        firstName: lead.firstName,
-        lastName: lead.lastName,
-        email: lead.email,
-        phone: lead.phone,
-        status: lead.status,
-        source: lead.source,
-        leadCategory: lead.leadCategory,
-        preferredCountry: lead.preferredCountry,
-        preferredCourse: lead.preferredCourse,
-        planningTimeline: lead.planningTimeline,
-        intendedIntake: lead.intendedIntake,
-        englishLevel: lead.englishLevel,
-        targetScore: lead.targetScore,
-        purpose: lead.purpose,
-        courseInterest: lead.courseInterest,
-        studentProfile: {
-          targetCountry: lead.preferredCountry || lead.studentProfile?.targetCountry || undefined,
-          targetCourse: lead.preferredCourse || lead.studentProfile?.targetCourse || undefined,
-          intake: lead.intendedIntake || lead.studentProfile?.intake || undefined,
-          ieltsStatus: lead.studentProfile?.ieltsStatus || 'NOT_TAKEN',
-          passportStatus: lead.studentProfile?.passportStatus || 'NO_PASSPORT',
-          educationLevel: lead.studentProfile?.educationLevel || undefined,
-          percentageGpa: lead.studentProfile?.percentageGpa || undefined,
-          budget: lead.studentProfile?.budget || undefined,
-          currentQualification: lead.studentProfile?.currentQualification || undefined,
-        },
-      });
+      const payload = isLockedWorkflow
+        ? {
+            firstName: lead.firstName,
+            lastName: lead.lastName,
+            email: lead.email,
+            phone: lead.phone,
+            address: lead.address,
+          }
+        : {
+            firstName: lead.firstName,
+            lastName: lead.lastName,
+            email: lead.email,
+            phone: lead.phone,
+            address: lead.address,
+            status: lead.status,
+            source: lead.source,
+            leadCategory: lead.leadCategory,
+            preferredCountry: lead.preferredCountry,
+            preferredCourse: lead.preferredCourse,
+            planningTimeline: lead.planningTimeline,
+            intendedIntake: lead.intendedIntake,
+            englishLevel: lead.englishLevel,
+            targetScore: lead.targetScore,
+            purpose: lead.purpose,
+            courseInterest: lead.courseInterest,
+            studentProfile: {
+              targetCountry: lead.preferredCountry || lead.studentProfile?.targetCountry || undefined,
+              targetCourse: lead.preferredCourse || lead.studentProfile?.targetCourse || undefined,
+              intake: lead.intendedIntake || lead.studentProfile?.intake || undefined,
+              ieltsStatus: lead.studentProfile?.ieltsStatus || 'NOT_TAKEN',
+              passportStatus: lead.studentProfile?.passportStatus || 'NO_PASSPORT',
+              educationLevel: lead.studentProfile?.educationLevel || undefined,
+              percentageGpa: lead.studentProfile?.percentageGpa || undefined,
+              budget: lead.studentProfile?.budget || undefined,
+              currentQualification: lead.studentProfile?.currentQualification || undefined,
+            },
+          };
+
+      const updated = await api.patch(`/api/v1/leads/${id}`, payload);
       setSuccessMsg('Candidate record updated successfully.');
       setLead(updated);
       const tl = await api.get(`/api/v1/leads/${id}/timeline`);
@@ -805,6 +826,13 @@ export default function LeadDetailPage() {
           </button>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Assigned Counsellor:</span>
+          <span className="badge" style={{ backgroundColor: '#e0f2fe', color: '#0369a1', fontWeight: 700, fontSize: '11px', borderRadius: '4px', padding: '2px 6px' }}>
+            {lead.assignee ? `${lead.assignee.firstName} ${lead.assignee.lastName}` : 'Unassigned'}
+          </span>
+        </div>
+
         {/* Student Progress Meter */}
         <div style={{ marginTop: '12px', marginBottom: '12px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div>
@@ -894,6 +922,12 @@ export default function LeadDetailPage() {
           </div>
         )}
 
+        {isLockedWorkflow && (
+          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '10px', borderRadius: '6px', fontSize: '11px', marginBottom: '12px', fontWeight: 600 }}>
+            ⚠️ Lead workflow is locked (Documents Pending or later). Counsellors can only update name, phone, email, address, notes, and followups.
+          </div>
+        )}
+
         <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ fontWeight: 700, fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
             Personal Administrative Info
@@ -941,10 +975,20 @@ export default function LeadDetailPage() {
             </div>
           </div>
 
+          <div className="form-group">
+            <label>Address</label>
+            <input
+              type="text"
+              className="form-control"
+              value={lead.address || ''}
+              onChange={(e) => setLead({ ...lead, address: e.target.value })}
+            />
+          </div>
+
           <div style={{ display: 'flex', gap: '8px' }}>
             <div className="form-group" style={{ flex: 1 }}>
               <label>Outreach Stage</label>
-              <select className="form-control" value={lead.status === 'ENROLLED' && lead.leadCategory === 'STUDY_ABROAD' ? 'ADMISSION_CLOSED' : lead.status} onChange={(e) => setLead({ ...lead, status: e.target.value })}>
+              <select className="form-control" value={lead.status === 'ENROLLED' && lead.leadCategory === 'STUDY_ABROAD' ? 'ADMISSION_CLOSED' : lead.status} onChange={(e) => setLead({ ...lead, status: e.target.value })} disabled={isLockedWorkflow}>
                 {getPipelineStages(lead.leadCategory || 'STUDY_ABROAD').map((st) => (
                   <option key={st} value={st}>
                     {st === 'NEW_LEAD' && 'New Lead'}
@@ -983,6 +1027,7 @@ export default function LeadDetailPage() {
                     status: stages[0]
                   });
                 }}
+                disabled={isLockedWorkflow}
               >
                 <option value="STUDY_ABROAD">Study Abroad</option>
                 <option value="IELTS">IELTS</option>
@@ -996,7 +1041,7 @@ export default function LeadDetailPage() {
 
             <div className="form-group" style={{ flex: 1 }}>
               <label>Ingress Source</label>
-              <select className="form-control" value={lead.source} onChange={(e) => setLead({ ...lead, source: e.target.value })}>
+              <select className="form-control" value={lead.source} onChange={(e) => setLead({ ...lead, source: e.target.value })} disabled={isLockedWorkflow}>
                 <option value="WEBSITE_SDK">Website SDK</option>
                 <option value="WHATSAPP">WhatsApp</option>
                 <option value="TELEPHONY">Telephony</option>
@@ -1016,6 +1061,7 @@ export default function LeadDetailPage() {
                 className="form-control"
                 value={lead.assigneeId || ''}
                 onChange={(e) => handleAssignChange(e.target.value)}
+                disabled={user?.role === 'COUNSELLOR'}
               >
                 <option value="">-- Unassigned --</option>
                 {users.map((u) => (
@@ -1030,6 +1076,7 @@ export default function LeadDetailPage() {
                 className="form-control"
                 value={lead.branchId || ''}
                 onChange={(e) => handleBranchChange(e.target.value)}
+                disabled={user?.role === 'COUNSELLOR'}
               >
                 <option value="">-- No Branch Boundary --</option>
                 {branches.map((b) => (
@@ -1060,6 +1107,7 @@ export default function LeadDetailPage() {
                         studentProfile: { ...lead.studentProfile, targetCountry: e.target.value },
                       })
                     }
+                    disabled={isLockedWorkflow}
                   />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
@@ -1075,6 +1123,7 @@ export default function LeadDetailPage() {
                         studentProfile: { ...lead.studentProfile, targetCourse: e.target.value },
                       })
                     }
+                    disabled={isLockedWorkflow}
                   />
                 </div>
               </div>
@@ -1093,6 +1142,7 @@ export default function LeadDetailPage() {
                         studentProfile: { ...lead.studentProfile, intake: e.target.value },
                       })
                     }
+                    disabled={isLockedWorkflow}
                   />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
@@ -1108,6 +1158,7 @@ export default function LeadDetailPage() {
                         planningTimeline: e.target.value,
                       })
                     }
+                    disabled={isLockedWorkflow}
                   />
                 </div>
               </div>
@@ -1123,6 +1174,7 @@ export default function LeadDetailPage() {
                   className="form-control"
                   value={lead.englishLevel || ''}
                   onChange={(e) => setLead({ ...lead, englishLevel: e.target.value })}
+                  disabled={isLockedWorkflow}
                 >
                   <option value="">-- Select Level --</option>
                   <option value="BEGINNER">Beginner</option>
@@ -1138,6 +1190,7 @@ export default function LeadDetailPage() {
                   placeholder="e.g. 7.5 or 79"
                   value={lead.targetScore || ''}
                   onChange={(e) => setLead({ ...lead, targetScore: e.target.value })}
+                  disabled={isLockedWorkflow}
                 />
               </div>
             </div>
@@ -1153,6 +1206,7 @@ export default function LeadDetailPage() {
                 placeholder="e.g. Career growth, Study abroad"
                 value={lead.purpose || ''}
                 onChange={(e) => setLead({ ...lead, purpose: e.target.value })}
+                disabled={isLockedWorkflow}
               />
             </div>
           )}
@@ -1167,13 +1221,14 @@ export default function LeadDetailPage() {
                 placeholder="e.g. Python Web Development"
                 value={lead.courseInterest || ''}
                 onChange={(e) => setLead({ ...lead, courseInterest: e.target.value })}
+                disabled={isLockedWorkflow}
               />
             </div>
           )}
 
-          <button type="submit" className="btn btn-primary" style={{ padding: '8px', marginTop: '4px', width: '100%' }}>
-            Save Profile Changes
-          </button>
+            <button type="submit" className="btn btn-primary" style={{ padding: '8px', marginTop: '4px', width: '100%' }}>
+              Save Profile Changes
+            </button>
         </form>
 
         {lead.submissions && lead.submissions.length > 0 && (
@@ -1405,65 +1460,69 @@ export default function LeadDetailPage() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>Checklist Requirements List</span>
-                <button type="button" onClick={handleRequestMissing} className="btn btn-primary btn-sm">
-                  📢 Request Missing Documents
-                </button>
+                {!isLockedWorkflow && (
+                  <button type="button" onClick={handleRequestMissing} className="btn btn-primary btn-sm">
+                    📢 Request Missing Documents
+                  </button>
+                )}
               </div>
 
               {/* Document upload form */}
-              <form onSubmit={handleDocumentUpload} style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
-                <div style={{ fontWeight: 700, fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Upload File to checklist
-                </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                  <div className="form-group" style={{ flex: 1, minWidth: '150px' }}>
-                    <label>Document Target Slot</label>
-                    <select className="form-control" value={uploadType} onChange={(e) => setUploadType(e.target.value)}>
-                      {activeChecklist.map((d: any) => (
-                        <option key={d.id} value={d.documentType}>{d.documentType} {d.isRequired ? '*' : '(Optional)'}</option>
-                      ))}
-                    </select>
+              {!isLockedWorkflow && (
+                <form onSubmit={handleDocumentUpload} style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Upload File to checklist
                   </div>
-
-                  <div className="form-group" style={{ flex: 1, minWidth: '150px' }}>
-                    <label>Expiry Date (if applicable)</label>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={expiryDateInput}
-                      onChange={(e) => setExpiryDateInput(e.target.value)}
-                      onClick={(e) => e.currentTarget.showPicker?.()}
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ flex: 2, minWidth: '200px' }}>
-                    <label>Choose File</label>
-                    <input
-                      id="document-file-input"
-                      type="file"
-                      className="form-control"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files.length > 0) {
-                          setSelectedFile(e.target.files[0]);
-                        }
-                      }}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <button type="submit" className="btn btn-primary" style={{ width: '160px' }}>
-                    📤 Upload / Replace
-                  </button>
-                  {uploadProgress !== null && (
-                    <div style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: '9999px', height: '8px', overflow: 'hidden' }}>
-                      <div style={{ backgroundColor: 'var(--primary-color)', height: '100%', width: `${uploadProgress}%`, transition: 'width 0.1s ease-out' }}></div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div className="form-group" style={{ flex: 1, minWidth: '150px' }}>
+                      <label>Document Target Slot</label>
+                      <select className="form-control" value={uploadType} onChange={(e) => setUploadType(e.target.value)}>
+                        {activeChecklist.map((d: any) => (
+                          <option key={d.id} value={d.documentType}>{d.documentType} {d.isRequired ? '*' : '(Optional)'}</option>
+                        ))}
+                      </select>
                     </div>
-                  )}
-                </div>
-              </form>
+
+                    <div className="form-group" style={{ flex: 1, minWidth: '150px' }}>
+                      <label>Expiry Date (if applicable)</label>
+                      <input
+                        type="date"
+                        className="form-control"
+                        value={expiryDateInput}
+                        onChange={(e) => setExpiryDateInput(e.target.value)}
+                        onClick={(e) => e.currentTarget.showPicker?.()}
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ flex: 2, minWidth: '200px' }}>
+                      <label>Choose File</label>
+                      <input
+                        id="document-file-input"
+                        type="file"
+                        className="form-control"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            setSelectedFile(e.target.files[0]);
+                          }
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <button type="submit" className="btn btn-primary" style={{ width: '160px' }}>
+                      📤 Upload / Replace
+                    </button>
+                    {uploadProgress !== null && (
+                      <div style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: '9999px', height: '8px', overflow: 'hidden' }}>
+                        <div style={{ backgroundColor: 'var(--primary-color)', height: '100%', width: `${uploadProgress}%`, transition: 'width 0.1s ease-out' }}></div>
+                      </div>
+                    )}
+                  </div>
+                </form>
+              )}
 
               {/* Active Documents List */}
               {activeChecklist.length === 0 ? (
@@ -1556,10 +1615,12 @@ export default function LeadDetailPage() {
                                 <>
                                   <button onClick={() => handleView(doc.id)} className="btn btn-xs" title="View file">👁️</button>
                                   <button onClick={() => handleDownload(doc.id, doc.originalFileName)} className="btn btn-xs" title="Download file">📥</button>
-                                  <button onClick={() => handleDelete(doc.id)} className="btn btn-xs btn-danger" title="Delete file">🗑️</button>
+                                  {!isLockedWorkflow && (
+                                    <button onClick={() => handleDelete(doc.id)} className="btn btn-xs btn-danger" title="Delete file">🗑️</button>
+                                  )}
                                 </>
                               )}
-                              {doc.status === 'UPLOADED' && (
+                              {!isLockedWorkflow && doc.status === 'UPLOADED' && (
                                 <>
                                   <button
                                     onClick={() => handleApproveDocument(doc.id)}
@@ -1621,17 +1682,19 @@ export default function LeadDetailPage() {
           )}
 
           {/* Tab 5: University Applications */}
-          {activeTab === 'applications' && (
+           {activeTab === 'applications' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>Shortlisted Universities & Applications</h3>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  onClick={() => setShowAddUniModal(true)}
-                >
-                  ➕ Shortlist University
-                </button>
+                {!isLockedWorkflow && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => setShowAddUniModal(true)}
+                  >
+                    ➕ Shortlist University
+                  </button>
+                )}
               </div>
 
               {applications.length === 0 ? (
@@ -1685,144 +1748,146 @@ export default function LeadDetailPage() {
                           </div>
                         )}
 
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-                          {nextAppStatus && (
+                        {!isLockedWorkflow && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                            {nextAppStatus && (
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-primary"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { applicationStatus: nextAppStatus })}
+                              >
+                                ➡️ Mark {nextAppStatus.replace(/_/g, ' ')}
+                              </button>
+                            )}
+
+                            {app.applicationStatus === 'DECISION_RECEIVED' && app.offerStatus === 'NONE' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs"
+                                  style={{ backgroundColor: '#f59e0b', color: '#fff' }}
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'CONDITIONAL_OFFER' })}
+                                >
+                                  📜 Cond. Offer
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs"
+                                  style={{ backgroundColor: '#d97706', color: '#fff' }}
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'UNCONDITIONAL_OFFER' })}
+                                >
+                                  📜 Uncond. Offer
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-danger"
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
+                                >
+                                  ❌ Reject Offer
+                                </button>
+                              </>
+                            )}
+
+                            {app.offerStatus === 'CONDITIONAL_OFFER' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs"
+                                  style={{ backgroundColor: '#d97706', color: '#fff' }}
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'UNCONDITIONAL_OFFER' })}
+                                >
+                                  📜 Uncond. Offer
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-success"
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_ACCEPTED' })}
+                                >
+                                  ✓ Accept Offer
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-danger"
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
+                                >
+                                  ❌ Reject Offer
+                                </button>
+                              </>
+                            )}
+
+                            {app.offerStatus === 'UNCONDITIONAL_OFFER' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-success"
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_ACCEPTED' })}
+                                >
+                                  ✓ Accept Offer
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-danger"
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
+                                >
+                                  ❌ Reject Offer
+                                </button>
+                              </>
+                            )}
+
+                            {app.offerStatus === 'OFFER_ACCEPTED' && app.visaStatus === 'NOT_STARTED' && (
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-primary"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_APPLIED' })}
+                              >
+                                ✈️ Apply Visa
+                              </button>
+                            )}
+                            {app.visaStatus === 'VISA_APPLIED' && (
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-primary"
+                                onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_BIOMETRICS' })}
+                              >
+                                🧬 Book Biometrics
+                              </button>
+                            )}
+                            {app.visaStatus === 'VISA_BIOMETRICS' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-success"
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_APPROVED' })}
+                                >
+                                  ✓ Visa Approved
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-danger"
+                                  onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_REJECTED' })}
+                                >
+                                  ❌ Visa Rejected
+                                </button>
+                              </>
+                            )}
+
                             <button
                               type="button"
-                              className="btn btn-xs btn-primary"
-                              onClick={() => handleUpdateApplicationStatus(app.id, { applicationStatus: nextAppStatus })}
+                              className="btn btn-xs"
+                              style={{ backgroundColor: '#475569', color: '#fff', marginLeft: 'auto' }}
+                              onClick={() => {
+                                setUpdateUniId(app.id);
+                                setUpdateUniName(app.universityName);
+                                setUpdateUniTuitionFee(app.tuitionFee !== null ? String(app.tuitionFee) : '');
+                                setUpdateUniScholarship(app.scholarshipAmount !== null ? String(app.scholarshipAmount) : '');
+                                setUpdateUniNotes(app.notes || '');
+                                setShowUpdateUniModal(true);
+                              }}
                             >
-                              ➡️ Mark {nextAppStatus.replace(/_/g, ' ')}
+                              ✏️ Edit Details
                             </button>
-                          )}
-
-                          {app.applicationStatus === 'DECISION_RECEIVED' && app.offerStatus === 'NONE' && (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-xs"
-                                style={{ backgroundColor: '#f59e0b', color: '#fff' }}
-                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'CONDITIONAL_OFFER' })}
-                              >
-                                📜 Cond. Offer
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs"
-                                style={{ backgroundColor: '#d97706', color: '#fff' }}
-                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'UNCONDITIONAL_OFFER' })}
-                              >
-                                📜 Uncond. Offer
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-danger"
-                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
-                              >
-                                ❌ Reject Offer
-                              </button>
-                            </>
-                          )}
-
-                          {app.offerStatus === 'CONDITIONAL_OFFER' && (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-xs"
-                                style={{ backgroundColor: '#d97706', color: '#fff' }}
-                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'UNCONDITIONAL_OFFER' })}
-                              >
-                                📜 Uncond. Offer
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-success"
-                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_ACCEPTED' })}
-                              >
-                                ✓ Accept Offer
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-danger"
-                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
-                              >
-                                ❌ Reject Offer
-                              </button>
-                            </>
-                          )}
-
-                          {app.offerStatus === 'UNCONDITIONAL_OFFER' && (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-success"
-                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_ACCEPTED' })}
-                              >
-                                ✓ Accept Offer
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-danger"
-                                onClick={() => handleUpdateApplicationStatus(app.id, { offerStatus: 'OFFER_REJECTED' })}
-                              >
-                                ❌ Reject Offer
-                              </button>
-                            </>
-                          )}
-
-                          {app.offerStatus === 'OFFER_ACCEPTED' && app.visaStatus === 'NOT_STARTED' && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-primary"
-                              onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_APPLIED' })}
-                            >
-                              ✈️ Apply Visa
-                            </button>
-                          )}
-                          {app.visaStatus === 'VISA_APPLIED' && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-primary"
-                              onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_BIOMETRICS' })}
-                            >
-                              🧬 Book Biometrics
-                            </button>
-                          )}
-                          {app.visaStatus === 'VISA_BIOMETRICS' && (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-success"
-                                onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_APPROVED' })}
-                              >
-                                ✓ Visa Approved
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-danger"
-                                onClick={() => handleUpdateApplicationStatus(app.id, { visaStatus: 'VISA_REJECTED' })}
-                              >
-                                ❌ Visa Rejected
-                              </button>
-                            </>
-                          )}
-
-                          <button
-                            type="button"
-                            className="btn btn-xs"
-                            style={{ backgroundColor: '#475569', color: '#fff', marginLeft: 'auto' }}
-                            onClick={() => {
-                              setUpdateUniId(app.id);
-                              setUpdateUniName(app.universityName);
-                              setUpdateUniTuitionFee(app.tuitionFee !== null ? String(app.tuitionFee) : '');
-                              setUpdateUniScholarship(app.scholarshipAmount !== null ? String(app.scholarshipAmount) : '');
-                              setUpdateUniNotes(app.notes || '');
-                              setShowUpdateUniModal(true);
-                            }}
-                          >
-                            ✏️ Edit Details
-                          </button>
-                        </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
