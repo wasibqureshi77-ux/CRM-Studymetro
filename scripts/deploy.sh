@@ -19,6 +19,7 @@ npx prisma generate
 npx prisma db push
 
 echo "🔨 Building API..."
+cd /var/www/CRM-Studymetro
 npm run build:api
 
 echo "🔨 Building CRM (apps/web)..."
