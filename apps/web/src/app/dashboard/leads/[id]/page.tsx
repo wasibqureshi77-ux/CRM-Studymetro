@@ -42,6 +42,8 @@ export default function LeadDetailPage() {
   const { user } = useAuth();
   const router = useRouter();
 
+  const [lead, setLead] = useState<any>(null);
+
   const isLockedWorkflow = user?.role === 'COUNSELLOR' && [
     'DOCUMENTS_PENDING',
     'DOCUMENTS_RECEIVED',
@@ -62,7 +64,6 @@ export default function LeadDetailPage() {
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   })();
 
-  const [lead, setLead] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
