@@ -15,6 +15,58 @@ export interface IWhatsAppOtpSender {
   sendWhatsAppOtp(phone: string, otp: string): Promise<boolean>;
 }
 
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(key: string, limit = 10, windowMs = 60 * 1000) {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= limit) {
+    return false;
+  }
+  entry.count++;
+  return true;
+}
+
+function parseUserAgent(userAgent: string): { browser: string; os: string; device: string } {
+  if (!userAgent) return { browser: 'Unknown', os: 'Unknown', device: 'Desktop' };
+  
+  let browser = 'Unknown';
+  let os = 'Unknown';
+  let device = 'Desktop';
+
+  const ua = userAgent.toLowerCase();
+
+  // Device
+  if (/mobile|android|iphone|ipad|phone/.test(ua)) {
+    device = 'Mobile';
+    if (/ipad|tablet/.test(ua)) {
+      device = 'Tablet';
+    }
+  } else {
+    device = 'Desktop';
+  }
+
+  // OS
+  if (ua.includes('windows')) os = 'Windows';
+  else if (ua.includes('macintosh') || ua.includes('mac os')) os = 'macOS';
+  else if (ua.includes('iphone') || ua.includes('ipad')) os = 'iOS';
+  else if (ua.includes('android')) os = 'Android';
+  else if (ua.includes('linux')) os = 'Linux';
+
+  // Browser
+  if (ua.includes('firefox')) browser = 'Firefox';
+  else if (ua.includes('chrome') && !ua.includes('chromium')) browser = 'Chrome';
+  else if (ua.includes('safari') && !ua.includes('chrome')) browser = 'Safari';
+  else if (ua.includes('edge')) browser = 'Edge';
+  else if (ua.includes('opera') || ua.includes('opr')) browser = 'Opera';
+
+  return { browser, os, device };
+}
+
 @Controller('api/v1/student-portal/auth')
 export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender {
   private readonly logger = new Logger(StudentAuthController.name);
@@ -38,6 +90,11 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
 
   @Post('check-email')
   async checkEmail(@Req() req: Request, @Body() body: { email: string }) {
+    const ip = req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1';
+    if (!checkRateLimit(`check-email:${ip}`)) {
+      throw new BadRequestException('Too many requests. Please try again later.');
+    }
+
     const tenantId = req.headers['x-tenant-id'] as string || 'studymetro-global';
     if (!body.email) {
       throw new BadRequestException('Email address is required');
@@ -79,6 +136,11 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
 
   @Post('send-otp')
   async sendOtp(@Req() req: Request, @Body() body: { email: string; method: string }) {
+    const ip = req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1';
+    if (!checkRateLimit(`send-otp:${ip}`)) {
+      throw new BadRequestException('Too many requests. Please try again later.');
+    }
+
     const tenantId = req.headers['x-tenant-id'] as string || 'studymetro-global';
     if (!body.email || !body.method) {
       throw new BadRequestException('Email and method are required');
@@ -188,14 +250,21 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
   async verifyOtp(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-    @Body() body: { email: string; code?: string; token?: string }
+    @Body() body: { email: string; code?: string; token?: string; method?: string }
   ) {
+    const ip = req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1';
+    if (!checkRateLimit(`verify-otp:${ip}`)) {
+      throw new BadRequestException('Too many requests. Please try again later.');
+    }
+
     const tenantId = req.headers['x-tenant-id'] as string || 'studymetro-global';
     const now = new Date();
 
     let lead;
+    let loginMethod = 'email_otp';
 
     if (body.token) {
+      loginMethod = 'magic_link';
       // Magic Link verification
       lead = await this.prisma.lead.findUnique({
         where: { studentMagicToken: body.token },
@@ -214,6 +283,9 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
         },
       });
     } else if (body.email && body.code) {
+      if (body.method) {
+        loginMethod = body.method;
+      }
       // OTP verification
       lead = await this.prisma.lead.findFirst({
         where: {
@@ -279,6 +351,63 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    // Device / UA parsing
+    const userAgentStr = req.headers['user-agent'] || '';
+    const uaInfo = parseUserAgent(userAgentStr);
+
+    // Check if this is the student's first login
+    const sessionCount = await this.prisma.studentSession.count({
+      where: { leadId: lead.id },
+    });
+
+    if (sessionCount === 0) {
+      await this.prisma.activity.create({
+        data: {
+          leadId: lead.id,
+          type: 'STUDENT_FIRST_LOGIN',
+          description: 'Student first login',
+          meta: { browser: uaInfo.browser, os: uaInfo.os, device: uaInfo.device },
+        },
+      });
+    }
+
+    // Log the specific login activity
+    let loginDescription = 'Student logged in via Email OTP';
+    let activityType = 'EMAIL_OTP_LOGIN';
+
+    if (loginMethod === 'magic_link') {
+      loginDescription = 'Student logged in via Magic Link';
+      activityType = 'MAGIC_LINK_LOGIN';
+    } else if (loginMethod === 'sms_otp') {
+      loginDescription = 'Student logged in via SMS OTP';
+      activityType = 'SMS_OTP_LOGIN';
+    } else if (loginMethod === 'whatsapp_otp') {
+      loginDescription = 'Student logged in via WhatsApp OTP';
+      activityType = 'WHATSAPP_OTP_LOGIN';
+    }
+
+    await this.prisma.activity.create({
+      data: {
+        leadId: lead.id,
+        type: activityType,
+        description: loginDescription,
+        meta: { browser: uaInfo.browser, os: uaInfo.os, device: uaInfo.device, ip },
+      },
+    });
+
+    // Create session in database
+    await this.prisma.studentSession.create({
+      data: {
+        leadId: lead.id,
+        token,
+        browser: uaInfo.browser,
+        os: uaInfo.os,
+        device: uaInfo.device,
+        ipAddress: ip,
+        expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+
     return {
       success: true,
       token,
@@ -292,8 +421,37 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
     };
   }
 
+  @Get('branding')
+  async getBranding(@Req() req: Request) {
+    const tenantId = req.headers['x-tenant-id'] as string || 'studymetro-global';
+    let setting = await this.prisma.portalSetting.findUnique({
+      where: { tenantId },
+    });
+    if (!setting) {
+      setting = await this.prisma.portalSetting.create({
+        data: {
+          tenantId,
+          portalName: 'Study Metro Portal',
+          primaryColor: '#3b82f6',
+          secondaryColor: '#1d4ed8',
+          supportEmail: 'support@studymetro.com',
+          supportPhone: '+1-800-555-0199',
+          footerText: '© 2026 Study Metro. All rights reserved.',
+        }
+      });
+    }
+    return setting;
+  }
+
   @Post('logout')
-  async logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const token = req.cookies?.['student_session'] || req.headers['authorization']?.replace('Bearer ', '');
+    if (token) {
+      await this.prisma.studentSession.updateMany({
+        where: { token },
+        data: { isActive: false },
+      });
+    }
     res.clearCookie('student_session');
     return { success: true };
   }
@@ -305,3 +463,4 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
     return req.user;
   }
 }
+

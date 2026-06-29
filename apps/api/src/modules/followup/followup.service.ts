@@ -70,6 +70,15 @@ export class FollowupService {
     await this.communicationService.enqueue(dto.leadId, CommunicationChannel.EMAIL, 'FOLLOWUP_REMINDER', { followupDate: dateStr }, 'FollowupService');
     await this.communicationService.enqueue(dto.leadId, CommunicationChannel.WHATSAPP, 'FOLLOWUP_REMINDER', { followupDate: dateStr }, 'FollowupService');
 
+    // Create student notification
+    await this.prisma.studentNotification.create({
+      data: {
+        leadId: dto.leadId,
+        title: 'Meeting Tomorrow',
+        message: `You have a scheduled meeting on ${dateStr}`,
+      }
+    });
+
     return followup;
   }
 
@@ -109,6 +118,18 @@ export class FollowupService {
         meta: { followupId: id, from: followup.status, to: dto.status, remarks: dto.notes }
       }
     });
+
+    if (dto.status === FollowupStatus.COMPLETED) {
+      await this.prisma.activity.create({
+        data: {
+          leadId: followup.leadId,
+          actorId,
+          type: 'FOLLOWUP_ATTENDED',
+          description: 'Follow-up attended',
+          meta: { followupId: id }
+        }
+      });
+    }
 
     // Audit logs
     await this.prisma.auditLog.create({

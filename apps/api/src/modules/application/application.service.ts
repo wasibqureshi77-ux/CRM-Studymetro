@@ -140,6 +140,20 @@ export class ApplicationService {
     });
 
     // 5. Generate timeline integration events based on transitions
+    if (
+      (dto.applicationStatus && dto.applicationStatus !== application.applicationStatus) ||
+      (dto.offerStatus && dto.offerStatus !== application.offerStatus) ||
+      (dto.visaStatus && dto.visaStatus !== application.visaStatus)
+    ) {
+      await this.prisma.studentNotification.create({
+        data: {
+          leadId: application.leadId,
+          title: 'Application Updated',
+          message: `Your application to ${application.universityName} has been updated. Status: ${dto.applicationStatus || application.applicationStatus}, Offer: ${dto.offerStatus || application.offerStatus}, Visa: ${dto.visaStatus || application.visaStatus}`,
+        }
+      });
+    }
+
     if (dto.applicationStatus && dto.applicationStatus !== application.applicationStatus) {
       if (dto.applicationStatus === ApplicationStatus.APPLICATION_STARTED) {
         await this.prisma.activity.create({

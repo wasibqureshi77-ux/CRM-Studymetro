@@ -106,6 +106,13 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Extended States
+  const [counsellor, setCounsellor] = useState<any>(null);
+  const [assignedBrochures, setAssignedBrochures] = useState<any[]>([]);
+  const [branding, setBranding] = useState<any>(null);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+
   // Tabs navigation
   const [activeTab, setActiveTab] = useState<'dashboard' | 'documents' | 'brochures' | 'messages' | 'profile'>('dashboard');
 
@@ -139,6 +146,36 @@ export default function StudentDashboard() {
     };
   };
 
+  const fetchBranding = async () => {
+    try {
+      const res = await fetch('/api/v1/student-portal/auth/branding');
+      if (res.ok) {
+        const data = await res.json();
+        setBranding(data);
+        if (data.primaryColor) {
+          document.documentElement.style.setProperty('--primary', data.primaryColor);
+        }
+        if (data.secondaryColor) {
+          document.documentElement.style.setProperty('--primary-hover', data.secondaryColor);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading branding', err);
+    }
+  };
+
+  const fetchSessions = async () => {
+    try {
+      const res = await fetch('/api/v1/student-portal/sessions', { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+    } catch (err) {
+      console.error('Error loading sessions', err);
+    }
+  };
+
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
@@ -148,6 +185,8 @@ export default function StudentDashboard() {
         router.push('/login');
         return;
       }
+
+      await fetchBranding();
 
       const res = await fetch('/api/v1/student-portal/dashboard', {
         headers: {
@@ -169,6 +208,8 @@ export default function StudentDashboard() {
       setDashboardPendingDocs(data.pendingDocuments || []);
       setNotifications(data.notifications || []);
       setTimeline(data.timeline || []);
+      setCounsellor(data.counsellor);
+      setAssignedBrochures(data.brochures || []);
 
       // Pre-fill profile edit fields
       if (data.student) {
@@ -246,8 +287,39 @@ export default function StudentDashboard() {
       fetchBrochures();
     } else if (activeTab === 'messages') {
       fetchMessages();
+    } else if (activeTab === 'profile') {
+      fetchSessions();
     }
   }, [activeTab]);
+
+  const handleLogoutSession = async (sessionId: string) => {
+    try {
+      const res = await fetch('/api/v1/student-portal/sessions/logout', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ sessionId }),
+      });
+      if (res.ok) {
+        fetchSessions();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleLogoutAllOtherSessions = async () => {
+    try {
+      const res = await fetch('/api/v1/student-portal/sessions/logout-all', {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      if (res.ok) {
+        fetchSessions();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -434,10 +506,14 @@ export default function StudentDashboard() {
         zIndex: 100,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '24px' }}>🎓</span>
+          {branding?.logo ? (
+            <img src={branding.logo} alt="Logo" style={{ height: '32px', width: 'auto' }} />
+          ) : (
+            <span style={{ fontSize: '24px' }}>🎓</span>
+          )}
           <div>
-            <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>Student Portal</h1>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Study Metro Admissions</p>
+            <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>{branding?.portalName || 'Student Portal'}</h1>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{branding?.footerText || 'Study Metro Admissions'}</p>
           </div>
         </div>
 
@@ -474,7 +550,117 @@ export default function StudentDashboard() {
           ))}
         </nav>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', position: 'relative' }}>
+          {/* Notification Bell */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '20px',
+                cursor: 'pointer',
+                position: 'relative',
+                padding: '4px',
+              }}
+            >
+              🔔
+              {notifications.length > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-4px',
+                  right: '-4px',
+                  backgroundColor: 'var(--danger)',
+                  color: '#fff',
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  borderRadius: '50%',
+                  width: '16px',
+                  height: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {notifications.length}
+                </span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <div style={{
+                position: 'absolute',
+                top: '36px',
+                right: 0,
+                width: '320px',
+                backgroundColor: 'rgba(16, 22, 42, 0.95)',
+                border: '1px solid var(--border-glass-hover)',
+                borderRadius: '8px',
+                padding: '16px',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+                zIndex: 1000,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>Notifications</h4>
+                  <button
+                    onClick={async () => {
+                      const token = localStorage.getItem('student_token');
+                      await fetch('/api/v1/student-portal/notifications/read-all', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                      });
+                      setNotifications([]);
+                    }}
+                    style={{ background: 'none', border: 'none', fontSize: '10px', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Clear All
+                  </button>
+                </div>
+                {notifications.length === 0 ? (
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+                    No unread notifications.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto' }}>
+                    {notifications.map(n => (
+                      <div key={n.id} style={{
+                        padding: '8px',
+                        backgroundColor: 'rgba(255,255,255,0.02)',
+                        borderLeft: '3px solid ' + (n.type === 'error' ? 'var(--danger)' : n.type === 'success' ? 'var(--success)' : 'var(--primary)'),
+                        borderRadius: '4px',
+                      }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#fff' }}>{n.title}</div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{n.message}</div>
+                        <button
+                          onClick={async () => {
+                            const token = localStorage.getItem('student_token');
+                            await fetch(`/api/v1/student-portal/notifications/${n.id}/read`, {
+                              method: 'PATCH',
+                              headers: { 'Authorization': `Bearer ${token}` }
+                            });
+                            setNotifications(prev => prev.filter(x => x.id !== n.id));
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            fontSize: '9px',
+                            color: 'var(--text-dim)',
+                            cursor: 'pointer',
+                            marginTop: '4px',
+                            padding: 0,
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-dim)'}
+                        >
+                          Mark as read
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>{profile?.fullName}</div>
             <div style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>ID: {profile?.portalId}</div>
@@ -607,6 +793,69 @@ export default function StudentDashboard() {
                   </div>
                 </div>
 
+                {/* Overall Admission Progress Card */}
+                <div style={{
+                  backgroundColor: 'var(--bg-glass)',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: '12px',
+                  padding: '24px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>Overall Admission Progress</span>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--success)' }}>{(profile as any)?.overallProgress || 0}%</span>
+                  </div>
+                  <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{ width: `${(profile as any)?.overallProgress || 0}%`, height: '100%', backgroundColor: 'var(--success)', transition: 'width 0.4s' }}></div>
+                  </div>
+                </div>
+
+                {/* Assigned Brochures Grid */}
+                <div style={{
+                  backgroundColor: 'var(--bg-glass)',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: '12px',
+                  padding: '24px',
+                }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#fff', marginBottom: '16px' }}>📖 Assigned Brochures</h3>
+                  {assignedBrochures.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No brochures assigned yet.</div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      {assignedBrochures.map(b => (
+                        <div key={b.id} style={{
+                          padding: '16px',
+                          borderRadius: '8px',
+                          backgroundColor: 'rgba(255,255,255,0.02)',
+                          border: '1px solid var(--border-glass)',
+                        }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>{b.title}</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            <span>Reading Progress</span>
+                            <span>{b.completionPercentage}%</span>
+                          </div>
+                          <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden', marginBottom: '8px' }}>
+                            <div style={{ width: `${b.completionPercentage}%`, height: '100%', backgroundColor: 'var(--primary)' }}></div>
+                          </div>
+                          <a
+                            href={`/brochure/view/${b.token}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-block',
+                              fontSize: '11px',
+                              color: 'var(--primary)',
+                              textDecoration: 'none',
+                              fontWeight: 600,
+                            }}
+                          >
+                            Read Guide →
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Document Checklist Summary */}
                 <div style={{
                   backgroundColor: 'var(--bg-glass)',
@@ -715,6 +964,25 @@ export default function StudentDashboard() {
               {/* Right Column */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
                 
+                {/* My Counsellor Card */}
+                <div style={{
+                  backgroundColor: 'var(--bg-glass)',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: '12px',
+                  padding: '24px',
+                }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#fff', marginBottom: '16px' }}>👤 My Counsellor</h3>
+                  {counsellor ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff' }}>{counsellor.name}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>✉️ {counsellor.email}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>📞 {counsellor.phone}</div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No counsellor assigned yet.</div>
+                  )}
+                </div>
+
                 {/* Upcoming Appointments */}
                 <div style={{
                   backgroundColor: 'var(--bg-glass)',
@@ -1347,6 +1615,78 @@ export default function StudentDashboard() {
                 </button>
               </div>
             </form>
+
+            {/* Active Sessions Manager */}
+            <div style={{
+              marginTop: '32px',
+              borderTop: '1px solid var(--border-glass)',
+              paddingTop: '24px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div>
+                  <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#fff' }}>My Active Devices</h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Sessions currently logged in to your account.</p>
+                </div>
+                {sessions.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleLogoutAllOtherSessions}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      color: 'var(--danger)',
+                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Logout All Other Sessions
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {sessions.map(s => (
+                  <div key={s.id} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(255,255,255,0.01)',
+                    border: '1px solid var(--border-glass)',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>
+                        {s.os || 'Unknown OS'} • {s.browser || 'Unknown Browser'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
+                        IP: {s.ipAddress || 'Unknown'} • Last active: {new Date(s.lastActivity).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleLogoutSession(s.id)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-glass-hover)',
+                        backgroundColor: 'transparent',
+                        color: 'var(--text-muted)',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--danger)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-glass-hover)'; }}
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </section>
         )}
 

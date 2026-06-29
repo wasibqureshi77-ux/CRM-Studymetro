@@ -133,6 +133,15 @@ export class BrochureService {
       },
     });
 
+    // Create StudentNotification
+    await this.prisma.studentNotification.create({
+      data: {
+        leadId,
+        title: 'New Brochure Assigned',
+        message: `A new brochure "${brochure.title}" has been assigned to you.`,
+      }
+    });
+
     return assignment;
   }
 

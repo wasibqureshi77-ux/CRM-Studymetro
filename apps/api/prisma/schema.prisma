@@ -119,6 +119,7 @@ model Tenant {
   leads        Lead[]
   visitors     Visitor[]
   emailSetting EmailSetting?
+  portalSetting PortalSetting?
 }
 
 model Branch {
@@ -225,6 +226,8 @@ model Lead {
   brochureAssignments BrochureAssignment[]
   engagementScore     Int                 @default(0)
   engagementLabel     String              @default("Cold")
+  studentSessions      StudentSession[]
+  studentNotifications StudentNotification[]
 
 
   @@index([tenantId])
@@ -266,6 +269,7 @@ model Note {
 enum DocumentStatus {
   PENDING
   UPLOADED
+  UNDER_REVIEW
   VERIFIED
   REJECTED
 }
@@ -599,5 +603,53 @@ model BrochureTracking {
   engagementScore      Int                @default(0)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
+}
+
+model StudentSession {
+  id           String   @id @default(uuid())
+  leadId       String
+  lead         Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  browser      String?
+  os           String?
+  device       String?
+  ipAddress    String?
+  country      String?
+  isActive     Boolean  @default(true)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActivity DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model StudentNotification {
+  id        String   @id @default(uuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model PortalSetting {
+  id              String   @id @default(uuid())
+  tenantId        String   @unique
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  portalName      String   @default("Student Portal")
+  logo            String?
+  primaryColor    String   @default("#3B82F6")
+  secondaryColor  String   @default("#1D4ED8")
+  supportEmail    String?
+  supportPhone    String?
+  privacyPolicy   String?  @db.Text
+  termsConditions String?  @db.Text
+  footerText      String?
+  socialLinks     Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 

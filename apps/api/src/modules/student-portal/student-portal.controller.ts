@@ -11,6 +11,7 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  Param,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -184,5 +185,86 @@ export class StudentPortalController {
         photo: updatedLead.photo,
       },
     };
+  }
+
+  @Get('timeline')
+  async getTimeline(@Req() req: any) {
+    const studentId = req.user.id;
+    return this.prisma.activity.findMany({
+      where: { leadId: studentId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  @Get('sessions')
+  async getSessions(@Req() req: any) {
+    const studentId = req.user.id;
+    return this.prisma.studentSession.findMany({
+      where: { leadId: studentId, isActive: true },
+      orderBy: { lastActivity: 'desc' },
+    });
+  }
+
+  @Post('sessions/logout')
+  async logoutSession(@Req() req: any, @Body('sessionId') sessionId: string) {
+    const studentId = req.user.id;
+    await this.prisma.studentSession.updateMany({
+      where: { id: sessionId, leadId: studentId },
+      data: { isActive: false },
+    });
+    return { success: true };
+  }
+
+  @Post('sessions/logout-all')
+  async logoutAllSessions(@Req() req: any) {
+    const studentId = req.user.id;
+    const currentToken = req.cookies?.['student_session'] || req.headers['authorization']?.replace('Bearer ', '');
+    await this.prisma.studentSession.updateMany({
+      where: {
+        leadId: studentId,
+        token: { not: currentToken },
+      },
+      data: { isActive: false },
+    });
+    return { success: true };
+  }
+
+  @Patch('communications/:id/read')
+  async markCommunicationRead(@Req() req: any, @Param('id') id: string) {
+    const studentId = req.user.id;
+    await this.prisma.communicationLog.updateMany({
+      where: { id, leadId: studentId },
+      data: { openedAt: new Date() },
+    });
+    return { success: true };
+  }
+
+  @Get('notifications')
+  async getNotifications(@Req() req: any) {
+    const studentId = req.user.id;
+    return this.prisma.studentNotification.findMany({
+      where: { leadId: studentId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  @Patch('notifications/:id/read')
+  async markNotificationRead(@Req() req: any, @Param('id') id: string) {
+    const studentId = req.user.id;
+    await this.prisma.studentNotification.updateMany({
+      where: { id, leadId: studentId },
+      data: { isRead: true },
+    });
+    return { success: true };
+  }
+
+  @Post('notifications/read-all')
+  async markAllNotificationsRead(@Req() req: any) {
+    const studentId = req.user.id;
+    await this.prisma.studentNotification.updateMany({
+      where: { leadId: studentId, isRead: false },
+      data: { isRead: true },
+    });
+    return { success: true };
   }
 }

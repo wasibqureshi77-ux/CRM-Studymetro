@@ -70,10 +70,11 @@ export default function LeadDetailPage() {
   const [loading, setLoading] = useState(true);
 
   // Form states
-  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups' | 'applications' | 'communications' | 'brochures'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups' | 'applications' | 'communications' | 'brochures' | 'sessions'>('timeline');
   const [commLogs, setCommLogs] = useState<any[]>([]);
   const [brochuresList, setBrochuresList] = useState<any[]>([]);
   const [brochureAssignments, setBrochureAssignments] = useState<any[]>([]);
+  const [studentSessions, setStudentSessions] = useState<any[]>([]);
   const [showSendBrochureModal, setShowSendBrochureModal] = useState(false);
   const [selectedBrochureId, setSelectedBrochureId] = useState('');
   const [sendingBrochure, setSendingBrochure] = useState(false);
@@ -221,6 +222,36 @@ export default function LeadDetailPage() {
       setCommLogs(res || []);
     } catch (err) {
       console.error('Failed to load communication logs', err);
+    }
+  };
+
+  const handleSessionsTabClick = async () => {
+    setActiveTab('sessions');
+    try {
+      const res = await api.get(`/api/v1/admin/student-portal/${id}/sessions`);
+      setStudentSessions(res || []);
+    } catch (err) {
+      console.error('Failed to load student sessions', err);
+    }
+  };
+
+  const handleRevokeSession = async (sessionId: string) => {
+    try {
+      await api.post(`/api/v1/admin/student-portal/sessions/${sessionId}/logout`);
+      addToast('success', 'Student session revoked successfully.');
+      handleSessionsTabClick();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to revoke session.');
+    }
+  };
+
+  const handleRevokeAllSessions = async () => {
+    try {
+      await api.post(`/api/v1/admin/student-portal/${id}/logout-all`);
+      addToast('success', 'All student sessions revoked successfully.');
+      handleSessionsTabClick();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to revoke sessions.');
     }
   };
 
@@ -1362,6 +1393,12 @@ export default function LeadDetailPage() {
           >
             📚 Brochures ({brochureAssignments.length})
           </button>
+          <button
+            className={`tab-btn ${activeTab === 'sessions' ? 'active' : ''}`}
+            onClick={handleSessionsTabClick}
+          >
+            💻 Student Devices ({studentSessions.length})
+          </button>
         </div>
 
         <div className="tab-content">
@@ -2179,6 +2216,66 @@ export default function LeadDetailPage() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 8: Active Student Sessions */}
+          {activeTab === 'sessions' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>Student Active Devices & Sessions</span>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>Manage student login devices and terminate active sessions.</p>
+                </div>
+                {studentSessions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRevokeAllSessions}
+                    className="btn btn-sm btn-danger"
+                  >
+                    Logout Student From All Devices
+                  </button>
+                )}
+              </div>
+
+              {studentSessions.length === 0 ? (
+                <div style={{ padding: '30px', textAlign: 'center', backgroundColor: '#fff', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)' }}>
+                  No active login sessions detected for this student portal.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {studentSessions.map((session) => (
+                    <div
+                      key={session.id}
+                      style={{
+                        padding: '16px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        backgroundColor: '#fff',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-color)' }}>
+                          {session.os || 'Unknown OS'} • {session.browser || 'Unknown Browser'}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          IP Address: {session.ipAddress || 'Unknown'} • Last Active: {new Date(session.lastActivity).toLocaleString()}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRevokeSession(session.id)}
+                        className="btn btn-xs btn-danger"
+                      >
+                        Revoke Access
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

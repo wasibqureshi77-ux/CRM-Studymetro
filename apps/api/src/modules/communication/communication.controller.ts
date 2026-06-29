@@ -147,6 +147,63 @@ export class CommunicationController {
     return { success: true, message: `Test email sent successfully to ${body.testRecipient}` };
   }
 
+  @Get('settings/portal')
+  @Roles(UserRole.SUPER_ADMIN)
+  async getPortalSettings(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    let setting = await this.communicationService['prisma'].portalSetting.findUnique({
+      where: { tenantId },
+    });
+    if (!setting) {
+      setting = await this.communicationService['prisma'].portalSetting.create({
+        data: {
+          tenantId,
+          portalName: 'Study Metro Student Portal',
+          primaryColor: '#3b82f6',
+          secondaryColor: '#1d4ed8',
+          supportEmail: 'support@studymetro.com',
+          supportPhone: '+1-800-555-0199',
+          footerText: '© 2026 Study Metro. All rights reserved.',
+        }
+      });
+    }
+    return setting;
+  }
+
+  @Post('settings/portal')
+  @Roles(UserRole.SUPER_ADMIN)
+  async savePortalSettings(@Req() req: AuthenticatedRequest, @Body() body: any) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService['prisma'].portalSetting.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        portalName: body.portalName || 'Study Metro Student Portal',
+        logo: body.logo || null,
+        primaryColor: body.primaryColor || '#3b82f6',
+        secondaryColor: body.secondaryColor || '#1d4ed8',
+        supportEmail: body.supportEmail || null,
+        supportPhone: body.supportPhone || null,
+        privacyPolicy: body.privacyPolicy || null,
+        termsConditions: body.termsConditions || null,
+        footerText: body.footerText || null,
+        socialLinks: body.socialLinks || {},
+      },
+      update: {
+        portalName: body.portalName,
+        logo: body.logo,
+        primaryColor: body.primaryColor,
+        secondaryColor: body.secondaryColor,
+        supportEmail: body.supportEmail,
+        supportPhone: body.supportPhone,
+        privacyPolicy: body.privacyPolicy,
+        termsConditions: body.termsConditions,
+        footerText: body.footerText,
+        socialLinks: body.socialLinks,
+      },
+    });
+  }
+
   private async prismaFindPassword(tenantId: string): Promise<string> {
     const { decrypt } = require('../../common/utils/crypto.util');
     const dbSettings = await this.communicationService.getSettings(tenantId);

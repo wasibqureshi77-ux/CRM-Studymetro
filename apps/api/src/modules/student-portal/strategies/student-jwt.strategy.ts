@@ -22,13 +22,33 @@ export class StudentJwtStrategy extends PassportStrategy(Strategy, 'student-jwt'
       ]),
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('JWT_SECRET') || 'study-metro-very-secure-jwt-key-2026-sprint1',
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: any) {
+  async validate(req: any, payload: any) {
     if (payload.role !== 'STUDENT') {
       throw new UnauthorizedException('Access restricted to students');
     }
+
+    const token = req.cookies?.['student_session'] || req.headers['authorization']?.replace('Bearer ', '');
+    if (!token) {
+      throw new UnauthorizedException('Authentication token not found');
+    }
+
+    const session = await this.prisma.studentSession.findUnique({
+      where: { token },
+    });
+
+    if (!session || !session.isActive || session.expiresAt < new Date()) {
+      throw new UnauthorizedException('Session is invalid or has expired');
+    }
+
+    // Update last activity timestamp
+    await this.prisma.studentSession.update({
+      where: { id: session.id },
+      data: { lastActivity: new Date() },
+    });
 
     const lead = await this.prisma.lead.findUnique({
       where: { id: payload.sub },

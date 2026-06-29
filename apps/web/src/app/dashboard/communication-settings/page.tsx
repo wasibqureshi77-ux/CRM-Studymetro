@@ -23,6 +23,18 @@ export default function CommunicationSettingsPage() {
   const [studentSmsOtpEnabled, setStudentSmsOtpEnabled] = useState(false);
   const [studentWhatsappOtpEnabled, setStudentWhatsappOtpEnabled] = useState(false);
 
+  // Portal branding states
+  const [portalName, setPortalName] = useState('');
+  const [logo, setLogo] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('#3b82f6');
+  const [secondaryColor, setSecondaryColor] = useState('#1d4ed8');
+  const [supportEmail, setSupportEmail] = useState('');
+  const [supportPhone, setSupportPhone] = useState('');
+  const [privacyPolicy, setPrivacyPolicy] = useState('');
+  const [termsConditions, setTermsConditions] = useState('');
+  const [footerText, setFooterText] = useState('');
+  const [socialLinks, setSocialLinks] = useState({ facebook: '', twitter: '', instagram: '' });
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -61,6 +73,21 @@ export default function CommunicationSettingsPage() {
         setStudentSmsOtpEnabled(res.studentSmsOtpEnabled !== undefined ? res.studentSmsOtpEnabled : false);
         setStudentWhatsappOtpEnabled(res.studentWhatsappOtpEnabled !== undefined ? res.studentWhatsappOtpEnabled : false);
       }
+
+      // Fetch branding portal settings
+      const pSetting = await api.get('/api/v1/communication/settings/portal');
+      if (pSetting) {
+        setPortalName(pSetting.portalName || '');
+        setLogo(pSetting.logo || '');
+        setPrimaryColor(pSetting.primaryColor || '#3b82f6');
+        setSecondaryColor(pSetting.secondaryColor || '#1d4ed8');
+        setSupportEmail(pSetting.supportEmail || '');
+        setSupportPhone(pSetting.supportPhone || '');
+        setPrivacyPolicy(pSetting.privacyPolicy || '');
+        setTermsConditions(pSetting.termsConditions || '');
+        setFooterText(pSetting.footerText || '');
+        setSocialLinks(pSetting.socialLinks || { facebook: '', twitter: '', instagram: '' });
+      }
     } catch (err: any) {
       console.error('Failed to load settings', err);
     } finally {
@@ -93,7 +120,22 @@ export default function CommunicationSettingsPage() {
         studentSmsOtpEnabled,
         studentWhatsappOtpEnabled,
       });
-      addToast('success', 'SMTP & Channel Configuration saved successfully!');
+
+      // Save portal branding settings
+      await api.post('/api/v1/communication/settings/portal', {
+        portalName,
+        logo,
+        primaryColor,
+        secondaryColor,
+        supportEmail,
+        supportPhone,
+        privacyPolicy,
+        termsConditions,
+        footerText,
+        socialLinks,
+      });
+
+      addToast('success', 'Configuration and Portal branding saved successfully!');
       fetchSettings();
     } catch (err: any) {
       addToast('error', err.message || 'Failed to save configuration');
@@ -419,6 +461,63 @@ export default function CommunicationSettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Student Portal Branding Settings */}
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '16px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px 0' }}>Student Portal Branding & Customization</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-group">
+                <label>Portal Display Name</label>
+                <input type="text" className="form-control" value={portalName} onChange={(e) => setPortalName(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Logo Image URL</label>
+                <input type="text" className="form-control" value={logo} onChange={(e) => setLogo(e.target.value)} placeholder="https://example.com/logo.png" />
+              </div>
+              <div className="form-group">
+                <label>Primary Brand Color</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input type="color" className="form-control" style={{ width: '45px', padding: 0 }} value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} />
+                  <input type="text" className="form-control" style={{ flex: 1 }} value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Secondary Accent Color</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input type="color" className="form-control" style={{ width: '45px', padding: 0 }} value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} />
+                  <input type="text" className="form-control" style={{ flex: 1 }} value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Support Contact Email</label>
+                <input type="email" className="form-control" value={supportEmail} onChange={(e) => setSupportEmail(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Support Phone Number</label>
+                <input type="text" className="form-control" value={supportPhone} onChange={(e) => setSupportPhone(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <label>Footer Copyright / Text</label>
+                <input type="text" className="form-control" value={footerText} onChange={(e) => setFooterText(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Facebook URL</label>
+                <input type="text" className="form-control" value={socialLinks.facebook || ''} onChange={(e) => setSocialLinks(prev => ({ ...prev, facebook: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label>Instagram URL</label>
+                <input type="text" className="form-control" value={socialLinks.instagram || ''} onChange={(e) => setSocialLinks(prev => ({ ...prev, instagram: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <label>Privacy Policy Content</label>
+                <textarea className="form-control" rows={3} value={privacyPolicy} onChange={(e) => setPrivacyPolicy(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <label>Terms & Conditions Content</label>
+                <textarea className="form-control" rows={3} value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)} />
+              </div>
             </div>
           </div>
 

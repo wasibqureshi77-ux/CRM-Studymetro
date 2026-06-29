@@ -183,6 +183,20 @@ export class LeadDocumentService {
       }
     });
 
+    // Create student notification on approve/reject
+    if (status === DocumentStatus.VERIFIED || status === DocumentStatus.REJECTED) {
+      const isApproved = status === DocumentStatus.VERIFIED;
+      await this.prisma.studentNotification.create({
+        data: {
+          leadId: doc.leadId,
+          title: isApproved ? 'Document Approved' : 'Document Rejected',
+          message: isApproved
+            ? `Your ${doc.documentType} has been approved.`
+            : `Your ${doc.documentType} was rejected. Note: ${note || 'No reason provided'}`,
+        }
+      });
+    }
+
     // Recalculate readiness
     await this.calculateReadiness(doc.leadId);
 
