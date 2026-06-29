@@ -12,7 +12,11 @@ echo "📦 Installing npm dependencies..."
 npm install
 
 echo "🗄️ Running Prisma migrations (production-safe)..."
-npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+cd /var/www/CRM-Studymetro/apps/api
+
+npx prisma generate
+
+npx prisma db push
 
 echo "🔨 Building API..."
 npm run build:api
