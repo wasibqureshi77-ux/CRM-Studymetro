@@ -3,6 +3,8 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+import { api } from '../../lib/api';
+
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -28,21 +30,12 @@ function LoginContent() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/v1/student-portal/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(JSON.parse(errText).message || 'Invalid or expired magic link');
-      }
-      const data = await res.json();
+      const data = await api.post('/api/v1/student-portal/auth/verify-otp', { token });
       localStorage.setItem('student_token', data.token);
       localStorage.setItem('student_user', JSON.stringify(data.student));
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Invalid or expired magic link');
       setStep(1);
     } finally {
       setLoading(false);
@@ -55,21 +48,24 @@ function LoginContent() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/v1/student-portal/auth/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      if (!res.ok) throw new Error('Email check failed');
-      const data = await res.json();
+      const data = await api.post('/api/v1/student-portal/auth/check-email', { email: email.trim() });
       
       if (!data.exists) {
         throw new Error('Access denied. No active student account associated with this email address.');
       }
 
-      setAvailableMethods(data.methods || []);
-      if (data.methods && data.methods.length > 0) {
-        setSelectedMethod(data.methods[0]);
+      // Convert methods object to array of strings for UI
+      const methodsArray: string[] = [];
+      if (data.methods) {
+        if (data.methods.magicLink) methodsArray.push('magic_link');
+        if (data.methods.emailOtp) methodsArray.push('email_otp');
+        if (data.methods.smsOtp) methodsArray.push('sms_otp');
+        if (data.methods.whatsappOtp) methodsArray.push('whatsapp_otp');
+      }
+
+      setAvailableMethods(methodsArray);
+      if (methodsArray.length > 0) {
+        setSelectedMethod(methodsArray[0]);
       }
       setStep(2);
     } catch (err: any) {
@@ -83,15 +79,7 @@ function LoginContent() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/v1/student-portal/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), method: selectedMethod }),
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(JSON.parse(errText).message || 'Failed to dispatch verification code');
-      }
+      await api.post('/api/v1/student-portal/auth/send-otp', { email: email.trim(), method: selectedMethod });
 
       if (selectedMethod === 'magic_link') {
         setStep(4);
@@ -112,16 +100,7 @@ function LoginContent() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/v1/student-portal/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), code: otpCode.trim() }),
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(JSON.parse(errText).message || 'OTP verification failed');
-      }
-      const data = await res.json();
+      const data = await api.post('/api/v1/student-portal/auth/verify-otp', { email: email.trim(), code: otpCode.trim() });
       localStorage.setItem('student_token', data.token);
       localStorage.setItem('student_user', JSON.stringify(data.student));
       router.push('/dashboard');
@@ -277,20 +256,20 @@ function LoginContent() {
                     onChange={() => setSelectedMethod(method)}
                     style={{ cursor: 'pointer' }}
                   />
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
+                  <span style={{ display: 'block' }}>
+                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#fff' }}>
                       {method === 'magic_link' && '🔗 Magic Login Link'}
                       {method === 'email_otp' && '✉️ Email One-Time Password'}
                       {method === 'sms_otp' && '📱 SMS Verification Code'}
                       {method === 'whatsapp_otp' && '💬 WhatsApp Verification Code'}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    </span>
+                    <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                       {method === 'magic_link' && 'One-click sign-in sent directly to inbox'}
                       {method === 'email_otp' && '6-digit code sent to your email'}
                       {method === 'sms_otp' && 'Code sent via cellular SMS (Arch)'}
                       {method === 'whatsapp_otp' && 'Code sent via WhatsApp ping (Arch)'}
-                    </div>
-                  </div>
+                    </span>
+                  </span>
                 </label>
               ))}
             </div>

@@ -11,6 +11,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
 
   // Fetch notifications
   const fetchNotifications = async () => {
@@ -61,10 +66,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="app-container">
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+      )}
       {/* 1. Sidebar Navigation */}
-      <aside className="sidebar">
-        <div className="sidebar-brand">
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-brand" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Study Metro CRM</span>
+          <button 
+            className="sidebar-close-btn"
+            onClick={() => setSidebarOpen(false)}
+            style={{ display: 'none', background: 'none', border: 'none', color: '#fff', fontSize: '18px', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
         </div>
         <ul className="sidebar-menu">
           {hasPermission('Dashboard.View') && (
@@ -143,7 +158,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* 2. Main Work Area */}
       <div className="main-content">
         <header className="main-header">
-          <div className="header-title">
+          <div className="header-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button 
+              className="mobile-hamburger"
+              onClick={() => setSidebarOpen(true)}
+              style={{ display: 'none', background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', padding: 0 }}
+            >
+              ☰
+            </button>
             <span><strong>Study Metro CRM</strong></span>
           </div>
 

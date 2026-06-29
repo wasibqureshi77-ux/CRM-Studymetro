@@ -1,7 +1,7 @@
 import { PrismaClient, UserRole } from '@prisma/client';
 
 const prisma = new PrismaClient();
-const API_URL = 'http://localhost:4000';
+const API_URL = 'http://127.0.0.1:4000';
 
 async function run() {
   console.log('🏁 STARTING STUDENT PORTAL VERIFICATION (PHASE 8B)...');
@@ -115,7 +115,7 @@ async function run() {
   });
   const checkEmailData = await checkEmailRes.json();
   console.log(`   Exists: ${checkEmailData.exists}, Available Methods:`, checkEmailData.methods);
-  if ((checkEmailRes.status === 200 || checkEmailRes.status === 201) && checkEmailData.exists && checkEmailData.methods.includes('email_otp')) {
+  if ((checkEmailRes.status === 200 || checkEmailRes.status === 201) && checkEmailData.exists && checkEmailData.methods.emailOtp) {
     results.emailValidated = true;
   }
 
@@ -171,6 +171,10 @@ async function run() {
     headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
     body: JSON.stringify({ token: magicToken }),
   });
+  console.log(`   Verify Magic Link Status: ${verifyMagicRes.status}`);
+  if (verifyMagicRes.status !== 200 && verifyMagicRes.status !== 201) {
+    console.log(`   Verify Magic Link Error Body: ${await verifyMagicRes.text()}`);
+  }
   if (verifyMagicRes.status === 201 || verifyMagicRes.status === 200) {
     results.magicLinkVerified = true;
     console.log('   Logged in via Magic Link!');
@@ -259,7 +263,7 @@ async function run() {
   const checkEmailAfterDisableData = await checkEmailAfterDisableRes.json();
   console.log(`   Available Methods:`, checkEmailAfterDisableData.methods);
   
-  if (!checkEmailAfterDisableData.methods.includes('magic_link') && checkEmailAfterDisableData.methods.includes('email_otp')) {
+  if (!checkEmailAfterDisableData.methods.magicLink && checkEmailAfterDisableData.methods.emailOtp) {
     results.settingsUpdateSync = true;
     console.log('   Passed! Disabling Magic Link in settings dynamically updated login screen choices.');
   }

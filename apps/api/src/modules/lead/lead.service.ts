@@ -217,10 +217,7 @@ export class LeadService {
     }
 
     const status = (dto as any).status || LeadStatus.NEW_LEAD;
-    let studentPortalId = null;
-    if (status === LeadStatus.ENROLLED) {
-      studentPortalId = await this.generateNextStudentPortalId();
-    }
+    const studentPortalId = await this.generateNextStudentPortalId();
 
     const lead = await this.prisma.lead.create({
       data: {
@@ -496,7 +493,7 @@ export class LeadService {
     const targetCourse = dto.leadCategory || dto.studentProfile?.targetCourse;
 
     let studentPortalId = undefined;
-    if (dto.status === 'ENROLLED' && !lead.studentPortalId) {
+    if (!lead.studentPortalId) {
       studentPortalId = await this.generateNextStudentPortalId();
     }
 

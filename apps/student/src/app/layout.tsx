@@ -72,6 +72,37 @@ export default function RootLayout({
           ::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.3);
           }
+          .desktop-only-tracker, .desktop-only {
+            display: block;
+          }
+          .mobile-only-tracker, .mobile-only {
+            display: none;
+          }
+          @media (max-width: 767px) {
+            .desktop-only-tracker, .desktop-only {
+              display: none !important;
+            }
+            .mobile-only-tracker, .mobile-only {
+              display: block !important;
+            }
+            main {
+              padding: 16px 16px 90px 16px !important;
+            }
+          }
+          @keyframes pulse {
+            0% {
+              transform: scale(1);
+              opacity: 0.8;
+            }
+            70% {
+              transform: scale(1.3);
+              opacity: 0;
+            }
+            100% {
+              transform: scale(1);
+              opacity: 0;
+            }
+          }
         `}</style>
       </head>
       <body>

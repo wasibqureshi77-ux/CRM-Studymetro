@@ -660,7 +660,7 @@ export class TrackerService {
         },
       });
       const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetrojaipur.com';
-      console.log(`[BROCHURE GENERATION] Assigned brochure "${brochure.title}" to lead ${newLead.id}. Unique link: ${appUrl}/brochure/view/${token}`);
+      console.log(`[BROCHURE GENERATION] Assigned brochure "${brochure.title}" to lead ${newLead.id}. Unique link generated.`);
       brochureLinkToken = token;
     }
 

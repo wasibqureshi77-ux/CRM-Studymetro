@@ -12,22 +12,25 @@ export class AuthService {
   ) {}
 
   async validateUser(email: string, pass: string, tenantId: string): Promise<any> {
+    console.log(`[AUTH DEBUG] validateUser called with: Email: "${email}", TenantId: "${tenantId}"`);
+    const emailTrimmed = email.trim();
     const user = await this.prisma.user.findFirst({
       where: {
-        email,
+        email: { equals: emailTrimmed, mode: 'insensitive' },
         tenantId,
       },
     });
 
     if (!user) {
+      console.log(`[AUTH DEBUG] User not found in DB for email "${emailTrimmed}" under tenant "${tenantId}"`);
       return null;
     }
 
-    if (!user.isActive) {
-      throw new UnauthorizedException('Your account has been disabled. Please contact the administrator.');
-    }
+    console.log(`[AUTH DEBUG] User found: ${user.email}. Comparing password...`);
+    const isMatch = await bcrypt.compare(pass, user.passwordHash);
+    console.log(`[AUTH DEBUG] Password match result: ${isMatch}`);
 
-    if (await bcrypt.compare(pass, user.passwordHash)) {
+    if (isMatch) {
       const { passwordHash, ...result } = user;
       return result;
     }

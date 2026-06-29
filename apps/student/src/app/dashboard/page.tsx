@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { api } from '../../lib/api';
 
 interface StudentProfile {
   id: string;
@@ -17,6 +18,7 @@ interface StudentProfile {
   currentStage: string;
   emergencyContact?: string;
   photo?: string;
+  overallProgress?: number;
 }
 
 interface Followup {
@@ -112,6 +114,7 @@ export default function StudentDashboard() {
   const [branding, setBranding] = useState<any>(null);
   const [sessions, setSessions] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
 
   // Tabs navigation
   const [activeTab, setActiveTab] = useState<'dashboard' | 'documents' | 'brochures' | 'messages' | 'profile'>('dashboard');
@@ -138,19 +141,10 @@ export default function StudentDashboard() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState({ text: '', type: '' });
 
-  const getHeaders = () => {
-    const token = localStorage.getItem('student_token');
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
-  };
-
   const fetchBranding = async () => {
     try {
-      const res = await fetch('/api/v1/student-portal/auth/branding');
-      if (res.ok) {
-        const data = await res.json();
+      const data = await api.get('/api/v1/student-portal/auth/branding');
+      if (data) {
         setBranding(data);
         if (data.primaryColor) {
           document.documentElement.style.setProperty('--primary', data.primaryColor);
@@ -166,11 +160,8 @@ export default function StudentDashboard() {
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch('/api/v1/student-portal/sessions', { headers: getHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data);
-      }
+      const data = await api.get('/api/v1/student-portal/sessions');
+      setSessions(data || []);
     } catch (err) {
       console.error('Error loading sessions', err);
     }
@@ -180,29 +171,10 @@ export default function StudentDashboard() {
     try {
       setLoading(true);
       setError('');
-      const token = localStorage.getItem('student_token');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-
+      
       await fetchBranding();
 
-      const res = await fetch('/api/v1/student-portal/dashboard', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (res.status === 401 || res.status === 403) {
-        localStorage.removeItem('student_token');
-        router.push('/login');
-        return;
-      }
-
-      if (!res.ok) throw new Error('Failed to retrieve dashboard details');
-
-      const data = await res.json();
+      const data = await api.get('/api/v1/student-portal/dashboard');
       setProfile(data.student);
       setFollowup(data.upcomingFollowup);
       setDashboardPendingDocs(data.pendingDocuments || []);
@@ -219,7 +191,12 @@ export default function StudentDashboard() {
         setEditPhoto(data.student.photo || '');
       }
     } catch (err: any) {
-      setError(err.message);
+      if (err.status === 401 || err.status === 403) {
+        localStorage.removeItem('student_token');
+        router.push('/login');
+        return;
+      }
+      setError(err.message || 'Failed to retrieve dashboard details');
     } finally {
       setLoading(false);
     }
@@ -228,13 +205,8 @@ export default function StudentDashboard() {
   const fetchAllDocuments = async () => {
     try {
       setDocsLoading(true);
-      const res = await fetch('/api/v1/student-portal/documents', {
-        headers: getHeaders()
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAllDocuments(data);
-      }
+      const data = await api.get('/api/v1/student-portal/documents');
+      setAllDocuments(data || []);
     } catch (err) {
       console.error('Error fetching documents checklist', err);
     } finally {
@@ -245,13 +217,8 @@ export default function StudentDashboard() {
   const fetchBrochures = async () => {
     try {
       setBrochuresLoading(true);
-      const res = await fetch('/api/v1/student-portal/brochures', {
-        headers: getHeaders()
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setBrochures(data);
-      }
+      const data = await api.get('/api/v1/student-portal/brochures');
+      setBrochures(data || []);
     } catch (err) {
       console.error('Error fetching brochures', err);
     } finally {
@@ -262,13 +229,8 @@ export default function StudentDashboard() {
   const fetchMessages = async () => {
     try {
       setMessagesLoading(true);
-      const res = await fetch('/api/v1/student-portal/communications', {
-        headers: getHeaders()
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data);
-      }
+      const data = await api.get('/api/v1/student-portal/communications');
+      setMessages(data || []);
     } catch (err) {
       console.error('Error fetching communications log', err);
     } finally {
@@ -294,14 +256,8 @@ export default function StudentDashboard() {
 
   const handleLogoutSession = async (sessionId: string) => {
     try {
-      const res = await fetch('/api/v1/student-portal/sessions/logout', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ sessionId }),
-      });
-      if (res.ok) {
-        fetchSessions();
-      }
+      await api.post('/api/v1/student-portal/sessions/logout', { sessionId });
+      fetchSessions();
     } catch (err) {
       console.error(err);
     }
@@ -309,13 +265,8 @@ export default function StudentDashboard() {
 
   const handleLogoutAllOtherSessions = async () => {
     try {
-      const res = await fetch('/api/v1/student-portal/sessions/logout-all', {
-        method: 'POST',
-        headers: getHeaders(),
-      });
-      if (res.ok) {
-        fetchSessions();
-      }
+      await api.post('/api/v1/student-portal/sessions/logout-all');
+      fetchSessions();
     } catch (err) {
       console.error(err);
     }
@@ -323,12 +274,13 @@ export default function StudentDashboard() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/v1/student-portal/auth/logout', { method: 'POST' });
+      await api.post('/api/v1/student-portal/auth/logout');
+    } catch (err) {
+      console.error('Logout error', err);
+    } finally {
       localStorage.removeItem('student_token');
       localStorage.removeItem('student_user');
       router.push('/login');
-    } catch (err) {
-      console.error('Logout error', err);
     }
   };
 
@@ -352,20 +304,7 @@ export default function StudentDashboard() {
     formData.append('file', file);
 
     try {
-      const token = localStorage.getItem('student_token');
-      const res = await fetch('/api/v1/student-portal/documents/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      const result = await res.json();
-      if (!res.ok) {
-        throw new Error(result.message || 'Failed to upload document');
-      }
-
+      await api.post('/api/v1/student-portal/documents/upload', formData);
       setUploadProgress(prev => ({ ...prev, [docType]: 'Uploaded successfully!' }));
       setSelectedFiles(prev => {
         const copy = { ...prev };
@@ -389,21 +328,12 @@ export default function StudentDashboard() {
     setProfileMsg({ text: '', type: '' });
 
     try {
-      const res = await fetch('/api/v1/student-portal/profile', {
-        method: 'PATCH',
-        headers: getHeaders(),
-        body: JSON.stringify({
-          phone: editPhone,
-          address: editAddress,
-          emergencyContact: editEmergency,
-          photo: editPhoto
-        })
+      await api.patch('/api/v1/student-portal/profile', {
+        phone: editPhone,
+        address: editAddress,
+        emergencyContact: editEmergency,
+        photo: editPhoto
       });
-
-      const result = await res.json();
-      if (!res.ok) {
-        throw new Error(result.message || 'Failed to save profile changes');
-      }
 
       setProfileMsg({ text: 'Profile updated successfully!', type: 'success' });
       setProfile(prev => prev ? {
@@ -414,7 +344,7 @@ export default function StudentDashboard() {
         photo: editPhoto
       } : null);
     } catch (err: any) {
-      setProfileMsg({ text: err.message, type: 'error' });
+      setProfileMsg({ text: err.message || 'Failed to save profile changes', type: 'error' });
     } finally {
       setProfileSaving(false);
     }
@@ -493,90 +423,270 @@ export default function StudentDashboard() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <header style={{
-        backgroundColor: 'var(--bg-glass)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border-glass)',
-        padding: '16px 32px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {branding?.logo ? (
-            <img src={branding.logo} alt="Logo" style={{ height: '32px', width: 'auto' }} />
-          ) : (
-            <span style={{ fontSize: '24px' }}>🎓</span>
-          )}
-          <div>
-            <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>{branding?.portalName || 'Student Portal'}</h1>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{branding?.footerText || 'Study Metro Admissions'}</p>
+      {/* DESKTOP HEADER */}
+      <div className="desktop-only">
+        <header style={{
+          backgroundColor: 'var(--bg-glass)',
+          backdropFilter: 'blur(12px)',
+          borderBottom: '1px solid var(--border-glass)',
+          padding: '16px 32px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {branding?.logo ? (
+              <img src={branding.logo} alt="Logo" style={{ height: '32px', width: 'auto' }} />
+            ) : (
+              <span style={{ fontSize: '24px' }}>🎓</span>
+            )}
+            <div>
+              <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>{branding?.portalName || 'Student Portal'}</h1>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{branding?.footerText || 'Study Metro Admissions'}</p>
+            </div>
           </div>
-        </div>
 
-        {/* Tab Navigation Menu */}
-        <nav style={{ display: 'flex', gap: '8px' }}>
-          {[
-            { key: 'dashboard', label: 'Dashboard', icon: '📊' },
-            { key: 'documents', label: 'Documents', icon: '📁' },
-            { key: 'brochures', label: 'Brochures', icon: '📖' },
-            { key: 'messages', label: 'Messages', icon: '✉️' },
-            { key: 'profile', label: 'Profile', icon: '👤' }
-          ].map(tab => (
+          {/* Tab Navigation Menu */}
+          <nav style={{ display: 'flex', gap: '8px' }}>
+            {[
+              { key: 'dashboard', label: 'Dashboard', icon: '📊' },
+              { key: 'documents', label: 'Documents', icon: '📁' },
+              { key: 'brochures', label: 'Brochures', icon: '📖' },
+              { key: 'messages', label: 'Messages', icon: '✉️' },
+              { key: 'profile', label: 'Profile', icon: '👤' }
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key as any)}
+                style={{
+                  background: activeTab === tab.key ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                  border: '1px solid ' + (activeTab === tab.key ? 'var(--primary)' : 'transparent'),
+                  color: activeTab === tab.key ? '#fff' : 'var(--text-muted)',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <span>{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', position: 'relative' }}>
+            {/* Notification Bell */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  padding: '4px',
+                }}
+              >
+                🔔
+                {notifications.length > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    backgroundColor: 'var(--danger)',
+                    color: '#fff',
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    borderRadius: '50%',
+                    width: '16px',
+                    height: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    {notifications.length}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div style={{
+                  position: 'absolute',
+                  top: '36px',
+                  right: 0,
+                  width: '320px',
+                  backgroundColor: 'rgba(16, 22, 42, 0.95)',
+                  border: '1px solid var(--border-glass-hover)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+                  zIndex: 1000,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>Notifications</h4>
+                    <button
+                      onClick={async () => {
+                        await api.post('/api/v1/student-portal/notifications/read-all');
+                        setNotifications([]);
+                      }}
+                      style={{ background: 'none', border: 'none', fontSize: '10px', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+                      No unread notifications.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto' }}>
+                      {notifications.map(n => (
+                        <div key={n.id} style={{
+                          padding: '8px',
+                          backgroundColor: 'rgba(255,255,255,0.02)',
+                          borderLeft: '3px solid ' + (n.type === 'error' ? 'var(--danger)' : n.type === 'success' ? 'var(--success)' : 'var(--primary)'),
+                          borderRadius: '4px',
+                        }}>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#fff' }}>{n.title}</div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{n.message}</div>
+                          <button
+                            onClick={async () => {
+                              await api.patch(`/api/v1/student-portal/notifications/${n.id}/read`);
+                              setNotifications(prev => prev.filter(x => x.id !== n.id));
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              fontSize: '9px',
+                              color: 'var(--text-dim)',
+                              cursor: 'pointer',
+                              marginTop: '4px',
+                              padding: 0,
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+                            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-dim)'}
+                          >
+                            Mark as read
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>{profile?.fullName}</div>
+              <div style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>ID: {profile?.portalId}</div>
+            </div>
             <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
+              onClick={handleLogout}
               style={{
-                background: activeTab === tab.key ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                border: '1px solid ' + (activeTab === tab.key ? 'var(--primary)' : 'transparent'),
-                color: activeTab === tab.key ? '#fff' : 'var(--text-muted)',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '13px',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                color: '#f87171',
+                fontSize: '12px',
                 fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
               }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.05)'}
             >
-              <span>{tab.icon}</span>
-              {tab.label}
+              Logout
             </button>
-          ))}
-        </nav>
+          </div>
+        </header>
+      </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', position: 'relative' }}>
-          {/* Notification Bell */}
+      {/* MOBILE HEADER */}
+      <div className="mobile-only" style={{ position: 'sticky', top: 0, zIndex: 100 }}>
+        <header style={{
+          backgroundColor: 'rgba(10, 14, 26, 0.8)',
+          backdropFilter: 'blur(16px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          padding: '12px 16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)',
+        }}>
+          {/* Hamburger Menu Toggle */}
+          <button
+            onClick={() => setShowDrawer(true)}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '20px',
+              color: '#fff',
+              cursor: 'pointer',
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ☰
+          </button>
+
+          {/* Centered Brand Title & Subtitle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {branding?.logo ? (
+              <img src={branding.logo} alt="Logo" style={{ height: '24px', width: 'auto' }} />
+            ) : (
+              <span style={{ fontSize: '18px' }}>🎓</span>
+            )}
+            <div style={{ textAlign: 'left' }}>
+              <h1 style={{ fontSize: '14px', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', margin: 0 }}>
+                {branding?.portalName || 'Study Metro'}
+              </h1>
+              <p style={{ fontSize: '9px', color: 'var(--text-muted)', margin: 0, fontWeight: 500 }}>
+                Student Portal
+              </p>
+            </div>
+          </div>
+
+          {/* Right Action - Notification trigger */}
           <div style={{ position: 'relative' }}>
             <button
               onClick={() => setShowNotifications(!showNotifications)}
               style={{
                 background: 'none',
                 border: 'none',
-                fontSize: '20px',
+                fontSize: '18px',
                 cursor: 'pointer',
-                position: 'relative',
-                padding: '4px',
+                padding: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative'
               }}
             >
               🔔
               {notifications.length > 0 && (
                 <span style={{
                   position: 'absolute',
-                  top: '-4px',
-                  right: '-4px',
+                  top: '2px',
+                  right: '2px',
                   backgroundColor: 'var(--danger)',
                   color: '#fff',
-                  fontSize: '9px',
+                  fontSize: '8px',
                   fontWeight: 700,
                   borderRadius: '50%',
-                  width: '16px',
-                  height: '16px',
+                  width: '14px',
+                  height: '14px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -591,65 +701,55 @@ export default function StudentDashboard() {
                 position: 'absolute',
                 top: '36px',
                 right: 0,
-                width: '320px',
-                backgroundColor: 'rgba(16, 22, 42, 0.95)',
+                width: '280px',
+                backgroundColor: 'rgba(16, 22, 42, 0.98)',
                 border: '1px solid var(--border-glass-hover)',
                 borderRadius: '8px',
-                padding: '16px',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+                padding: '12px',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.6)',
                 zIndex: 1000,
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>Notifications</h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h4 style={{ fontSize: '11px', fontWeight: 700, color: '#fff' }}>Notifications</h4>
                   <button
                     onClick={async () => {
-                      const token = localStorage.getItem('student_token');
-                      await fetch('/api/v1/student-portal/notifications/read-all', {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                      });
+                      await api.post('/api/v1/student-portal/notifications/read-all');
                       setNotifications([]);
                     }}
-                    style={{ background: 'none', border: 'none', fontSize: '10px', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}
+                    style={{ background: 'none', border: 'none', fontSize: '9px', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}
                   >
                     Clear All
                   </button>
                 </div>
                 {notifications.length === 0 ? (
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>
                     No unread notifications.
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
                     {notifications.map(n => (
                       <div key={n.id} style={{
-                        padding: '8px',
+                        padding: '6px',
                         backgroundColor: 'rgba(255,255,255,0.02)',
-                        borderLeft: '3px solid ' + (n.type === 'error' ? 'var(--danger)' : n.type === 'success' ? 'var(--success)' : 'var(--primary)'),
+                        borderLeft: '2px solid ' + (n.type === 'error' ? 'var(--danger)' : n.type === 'success' ? 'var(--success)' : 'var(--primary)'),
                         borderRadius: '4px',
                       }}>
-                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#fff' }}>{n.title}</div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{n.message}</div>
+                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#fff' }}>{n.title}</div>
+                        <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px' }}>{n.message}</div>
                         <button
                           onClick={async () => {
-                            const token = localStorage.getItem('student_token');
-                            await fetch(`/api/v1/student-portal/notifications/${n.id}/read`, {
-                              method: 'PATCH',
-                              headers: { 'Authorization': `Bearer ${token}` }
-                            });
+                            await api.patch(`/api/v1/student-portal/notifications/${n.id}/read`);
                             setNotifications(prev => prev.filter(x => x.id !== n.id));
                           }}
                           style={{
                             background: 'none',
                             border: 'none',
-                            fontSize: '9px',
+                            fontSize: '8px',
                             color: 'var(--text-dim)',
                             cursor: 'pointer',
-                            marginTop: '4px',
+                            marginTop: '2px',
                             padding: 0,
                           }}
-                          onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-                          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-dim)'}
                         >
                           Mark as read
                         </button>
@@ -660,112 +760,364 @@ export default function StudentDashboard() {
               </div>
             )}
           </div>
+        </header>
+      </div>
 
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>{profile?.fullName}</div>
-            <div style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>ID: {profile?.portalId}</div>
-          </div>
-          <button
-            onClick={handleLogout}
+      {/* MOBILE LEFT DRAWER */}
+      {showDrawer && (
+        <div
+          onClick={() => setShowDrawer(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 600,
+            display: 'flex',
+            justifyContent: 'flex-start',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
             style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              backgroundColor: 'rgba(239, 68, 68, 0.05)',
-              color: '#f87171',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'background-color 0.2s',
+              width: '280px',
+              height: '100%',
+              backgroundColor: 'rgba(10, 14, 26, 0.98)',
+              borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+              padding: '24px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              boxShadow: '4px 0 30px rgba(0, 0, 0, 0.5)',
             }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.05)'}
           >
-            Logout
-          </button>
+            <div>
+              {/* Drawer Brand */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '20px' }}>🎓</span>
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>Study Metro</span>
+                </div>
+                <button
+                  onClick={() => setShowDrawer(false)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Student Metadata Card */}
+              <div style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                borderRadius: '8px',
+                padding: '12px',
+                marginBottom: '20px',
+              }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>{profile?.fullName}</div>
+                <div style={{ fontSize: '10px', color: 'var(--primary)', marginTop: '2px', fontWeight: 600 }}>ID: {profile?.portalId}</div>
+              </div>
+
+              {/* Drawer Links */}
+              <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {[
+                  { key: 'dashboard', label: 'Dashboard', icon: '📊' },
+                  { key: 'documents', label: 'Documents', icon: '📁' },
+                  { key: 'brochures', label: 'Brochures', icon: '📖' },
+                  { key: 'messages', label: 'Messages', icon: '✉️' },
+                  { key: 'profile', label: 'Profile', icon: '👤' },
+                ].map((item) => {
+                  const active = activeTab === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => {
+                        setActiveTab(item.key as any);
+                        setShowDrawer(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: active ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                        color: active ? '#fff' : 'var(--text-muted)',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Logout button in drawer bottom */}
+            <button
+              onClick={() => {
+                setShowDrawer(false);
+                handleLogout();
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '8px',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                color: '#f87171',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'background-color 0.2s',
+              }}
+            >
+              <span>🚪</span>
+              <span>Logout</span>
+            </button>
+          </div>
         </div>
-      </header>
+      )}
 
       {/* Main Content */}
       <main style={{ flex: 1, padding: '32px', display: 'flex', flexDirection: 'column', gap: '28px', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
         
         {activeTab === 'dashboard' && (
           <>
-            {/* Progress Tracker Card */}
-            <section style={{
-              backgroundColor: 'var(--bg-glass)',
-              border: '1px solid var(--border-glass)',
-              borderRadius: '12px',
-              padding: '24px',
-            }}>
-              <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#fff', marginBottom: '24px' }}>Your Admission Progress Tracker</h2>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', width: '100%' }}>
-                {/* Connecting bar */}
-                <div style={{
-                  position: 'absolute',
-                  top: '15px',
-                  left: '5%',
-                  right: '5%',
-                  height: '4px',
-                  backgroundColor: 'rgba(255,255,255,0.06)',
-                  zIndex: 0,
-                }}></div>
-                <div style={{
-                  position: 'absolute',
-                  top: '15px',
-                  left: '5%',
-                  width: `${(currentStageIndex / (STAGES.length - 1)) * 90}%`,
-                  height: '4px',
-                  backgroundColor: 'var(--success)',
-                  zIndex: 0,
-                  transition: 'width 0.4s ease-in-out',
-                }}></div>
+            {/* Progress Tracker Card - DESKTOP ONLY */}
+            <div className="desktop-only-tracker">
+              <section style={{
+                backgroundColor: 'var(--bg-glass)',
+                border: '1px solid var(--border-glass)',
+                borderRadius: '12px',
+                padding: '24px',
+              }}>
+                <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#fff', marginBottom: '24px' }}>Your Admission Progress Tracker</h2>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', width: '100%' }}>
+                  {/* Connecting bar */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '15px',
+                    left: '5%',
+                    right: '5%',
+                    height: '4px',
+                    backgroundColor: 'rgba(255,255,255,0.06)',
+                    zIndex: 0,
+                  }}></div>
+                  <div style={{
+                    position: 'absolute',
+                    top: '15px',
+                    left: '5%',
+                    width: `${(currentStageIndex / (STAGES.length - 1)) * 90}%`,
+                    height: '4px',
+                    backgroundColor: 'var(--success)',
+                    zIndex: 0,
+                    transition: 'width 0.4s ease-in-out',
+                  }}></div>
 
-                {STAGES.map((stage, idx) => {
-                  const isActive = idx <= currentStageIndex;
-                  const isCurrent = idx === currentStageIndex;
+                  {STAGES.map((stage, idx) => {
+                    const isActive = idx <= currentStageIndex;
+                    const isCurrent = idx === currentStageIndex;
 
-                  return (
-                    <div key={stage.key} style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      zIndex: 1,
-                      width: '12%',
-                      textAlign: 'center',
-                    }}>
-                      <div style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        backgroundColor: isCurrent ? 'var(--success)' : (isActive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)'),
-                        border: '2px solid ' + (isActive ? 'var(--success)' : 'rgba(255, 255, 255, 0.15)'),
+                    return (
+                      <div key={stage.key} style={{
                         display: 'flex',
+                        flexDirection: 'column',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700,
-                        fontSize: '12px',
-                        color: isActive ? '#fff' : 'var(--text-muted)',
-                        boxShadow: isCurrent ? '0 0 16px var(--success)' : 'none',
-                        transition: 'all 0.3s',
+                        zIndex: 1,
+                        width: '12%',
+                        textAlign: 'center',
                       }}>
-                        {idx + 1}
+                        <div style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          backgroundColor: isCurrent ? 'var(--success)' : (isActive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)'),
+                          border: '2px solid ' + (isActive ? 'var(--success)' : 'rgba(255, 255, 255, 0.15)'),
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          color: isActive ? '#fff' : 'var(--text-muted)',
+                          boxShadow: isCurrent ? '0 0 16px var(--success)' : 'none',
+                          transition: 'all 0.3s',
+                        }}>
+                          {idx + 1}
+                        </div>
+                        <div style={{
+                          fontSize: '11px',
+                          fontWeight: isCurrent ? 700 : 500,
+                          color: isCurrent ? '#fff' : (isActive ? 'var(--text-main)' : 'var(--text-dim)'),
+                          marginTop: '8px',
+                          lineHeight: '1.3',
+                        }}>
+                          {stage.label}
+                        </div>
                       </div>
-                      <div style={{
-                        fontSize: '11px',
-                        fontWeight: isCurrent ? 700 : 500,
-                        color: isCurrent ? '#fff' : (isActive ? 'var(--text-main)' : 'var(--text-dim)'),
-                        marginTop: '8px',
-                        lineHeight: '1.3',
-                      }}>
-                        {stage.label}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+
+            {/* Progress Tracker Card - MOBILE ONLY */}
+            <div className="mobile-only-tracker">
+              {/* Progress Percentage Card */}
+              <div style={{
+                backgroundColor: 'var(--bg-glass)',
+                border: '1px solid var(--border-glass)',
+                borderRadius: '12px',
+                padding: '20px',
+                marginBottom: '16px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 650, color: '#fff' }}>Overall Admission Progress</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--success)' }}>{profile?.overallProgress || 0}%</span>
+                </div>
+                <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${profile?.overallProgress || 0}%`, height: '100%', backgroundColor: 'var(--success)', transition: 'width 0.4s' }}></div>
+                </div>
               </div>
-            </section>
+
+              {/* Vertical Mobile Stepper */}
+              <section style={{
+                backgroundColor: 'var(--bg-glass)',
+                border: '1px solid var(--border-glass)',
+                borderRadius: '12px',
+                padding: '20px',
+              }}>
+                <h2 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '20px' }}>Your Admission Journey</h2>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {STAGES.map((stage, idx) => {
+                    const isCompleted = idx < currentStageIndex;
+                    const isCurrent = idx === currentStageIndex;
+
+                    return (
+                      <div key={stage.key} style={{ display: 'flex', gap: '16px', position: 'relative' }}>
+                        {/* Left Circle + Connecting Line column */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '32px' }}>
+                          <div style={{
+                            width: isCurrent ? '34px' : '26px',
+                            height: isCurrent ? '34px' : '26px',
+                            borderRadius: '50%',
+                            backgroundColor: isCompleted ? 'rgba(16, 185, 129, 0.12)' : isCurrent ? 'var(--primary)' : 'rgba(255, 255, 255, 0.03)',
+                            border: '2px solid ' + (isCompleted ? 'var(--success)' : isCurrent ? 'var(--primary)' : 'rgba(255, 255, 255, 0.12)'),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '11px',
+                            color: isCurrent || isCompleted ? '#fff' : 'var(--text-muted)',
+                            boxShadow: isCurrent ? '0 0 12px var(--primary)' : 'none',
+                            position: 'relative',
+                            zIndex: 2,
+                            transition: 'all 0.3s',
+                          }}>
+                            {isCompleted ? '✓' : idx + 1}
+                            {isCurrent && (
+                              <span style={{
+                                position: 'absolute',
+                                top: '-2px',
+                                left: '-2px',
+                                right: '-2px',
+                                bottom: '-2px',
+                                borderRadius: '50%',
+                                border: '2px solid var(--primary)',
+                                animation: 'pulse 1.8s infinite',
+                                opacity: 0.6
+                              }} />
+                            )}
+                          </div>
+
+                          {idx < STAGES.length - 1 && (
+                            <div style={{
+                              width: '2px',
+                              flexGrow: 1,
+                              minHeight: '28px',
+                              backgroundColor: isCompleted ? 'var(--success)' : 'rgba(255, 255, 255, 0.08)',
+                              zIndex: 1,
+                              marginTop: '2px',
+                              marginBottom: '2px',
+                            }} />
+                          )}
+                        </div>
+
+                        {/* Label Details */}
+                        <div style={{
+                          paddingBottom: idx < STAGES.length - 1 ? '16px' : '0',
+                          paddingTop: isCurrent ? '8px' : '4px',
+                          flex: 1
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight: isCurrent || isCompleted ? 700 : 500,
+                              color: isCurrent ? '#fff' : isCompleted ? 'var(--text-main)' : 'var(--text-dim)',
+                              lineHeight: '1.4'
+                            }}>
+                              {stage.label}
+                            </span>
+                            {isCurrent && (
+                              <span style={{
+                                fontSize: '8px',
+                                fontWeight: 700,
+                                backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                                color: 'var(--primary)',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em'
+                              }}>
+                                Active
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* Current Stage Card */}
+              <div style={{
+                backgroundColor: 'rgba(59, 130, 246, 0.06)',
+                border: '1px solid rgba(59, 130, 246, 0.15)',
+                borderRadius: '12px',
+                padding: '20px',
+                marginTop: '16px',
+              }}>
+                <span style={{ fontSize: '10px', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current Stage</span>
+                <h4 style={{ fontSize: '15px', fontWeight: 700, color: '#fff', marginTop: '4px' }}>{STAGES[currentStageIndex]?.label}</h4>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.4' }}>
+                  {STAGES[currentStageIndex]?.key === 'NEW_LEAD' && 'Your lead has been successfully registered. We are assigning a counsellor for you.'}
+                  {STAGES[currentStageIndex]?.key === 'COUNSELLING' && 'Your counsellor is currently guiding you through the admission process.'}
+                  {STAGES[currentStageIndex]?.key === 'DOCUMENTS_PENDING' && 'Please upload all requested files in the Documents tab for verification.'}
+                  {STAGES[currentStageIndex]?.key === 'UNIVERSITY_APPLIED' && 'Your university applications have been submitted and are under review.'}
+                  {STAGES[currentStageIndex]?.key === 'OFFER_LETTER' && 'Congratulations! You have received your university offer letter.'}
+                  {STAGES[currentStageIndex]?.key === 'VISA_PROCESS' && 'Your student visa application is currently being prepared/submitted.'}
+                  {STAGES[currentStageIndex]?.key === 'COMPLETED' && 'Congratulations! Your admission process is complete and you are ready to enroll.'}
+                </p>
+              </div>
+            </div>
 
             {/* Dashboard Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '7fr 5fr', gap: '28px' }}>
@@ -1302,7 +1654,7 @@ export default function StudentDashboard() {
                         </span>
                         
                         <a
-                          href={`http://localhost:3000/brochure/view/${assignment.token}`}
+                          href={`${process.env.NEXT_PUBLIC_CRM_URL || 'http://localhost:3000'}/brochure/view/${assignment.token}`}
                           target="_blank"
                           rel="noreferrer"
                           style={{
@@ -1691,6 +2043,57 @@ export default function StudentDashboard() {
         )}
 
       </main>
+
+      {/* MOBILE BOTTOM NAVIGATION BAR */}
+      <div className="mobile-only" style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '64px',
+        backgroundColor: 'rgba(10, 14, 26, 0.85)',
+        backdropFilter: 'blur(20px)',
+        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+        boxShadow: '0 -4px 30px rgba(0, 0, 0, 0.4)',
+        display: 'flex',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        zIndex: 90,
+      }}>
+        {[
+          { key: 'dashboard', label: 'Home', icon: '🏠' },
+          { key: 'documents', label: 'Docs', icon: '📄' },
+          { key: 'brochures', label: 'Guides', icon: '📚' },
+          { key: 'messages', label: 'Chats', icon: '💬' },
+          { key: 'profile', label: 'Me', icon: '👤' },
+        ].map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as any)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: active ? 'var(--primary)' : 'var(--text-dim)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                fontSize: '10px',
+                fontWeight: active ? 700 : 500,
+                padding: '4px 8px',
+                transition: 'all 0.2s',
+              }}
+            >
+              <span style={{ fontSize: '18px', filter: active ? 'none' : 'grayscale(100%) opacity(0.7)' }}>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

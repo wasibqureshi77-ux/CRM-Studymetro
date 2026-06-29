@@ -88,6 +88,31 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
     return true;
   }
 
+  private async generateNextStudentPortalId(): Promise<string> {
+    const currentYear = new Date().getFullYear().toString().slice(-2);
+    const prefix = `STD${currentYear}`;
+
+    const lastLead = await this.prisma.lead.findFirst({
+      where: {
+        studentPortalId: {
+          startsWith: prefix,
+        },
+      },
+      orderBy: {
+        studentPortalId: 'desc',
+      },
+    });
+
+    if (lastLead && lastLead.studentPortalId) {
+      const lastNumStr = lastLead.studentPortalId.replace(prefix, '');
+      const lastNum = parseInt(lastNumStr, 10);
+      const nextNum = lastNum + 1;
+      return `${prefix}${nextNum.toString().padStart(4, '0')}`;
+    }
+
+    return `${prefix}0001`;
+  }
+
   @Post('check-email')
   async checkEmail(@Req() req: Request, @Body() body: { email: string }) {
     const ip = req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1';
@@ -95,21 +120,33 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
       throw new BadRequestException('Too many requests. Please try again later.');
     }
 
-    const tenantId = req.headers['x-tenant-id'] as string || 'studymetro-global';
+    const tenantId = (req as any).tenantId || req.headers['x-tenant-id'] as string || 'studymetro-global';
     if (!body.email) {
       throw new BadRequestException('Email address is required');
     }
 
-    const lead = await this.prisma.lead.findFirst({
+    const emailTrimmed = body.email.trim();
+
+    // First find if any lead exists with this email at all
+    const anyLead = await this.prisma.lead.findFirst({
       where: {
-        email: { equals: body.email.trim(), mode: 'insensitive' },
+        email: { equals: emailTrimmed, mode: 'insensitive' },
         tenantId,
-        studentPortalId: { not: null },
+        deletedAt: null,
       },
     });
 
-    if (!lead) {
-      return { exists: false };
+    if (!anyLead) {
+      throw new NotFoundException('Email not registered');
+    }
+
+    if (!anyLead.studentPortalId) {
+      const newPortalId = await this.generateNextStudentPortalId();
+      await this.prisma.lead.update({
+        where: { id: anyLead.id },
+        data: { studentPortalId: newPortalId },
+      });
+      anyLead.studentPortalId = newPortalId;
     }
 
     // Fetch enabled methods
@@ -117,16 +154,16 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
       where: { tenantId },
     });
 
-    const methods = [];
-    if (!settings) {
-      // Defaults if settings not configured
-      methods.push('magic_link', 'email_otp');
-    } else {
-      if (settings.studentMagicLinkEnabled) methods.push('magic_link');
-      if (settings.studentEmailOtpEnabled) methods.push('email_otp');
-      if (settings.studentSmsOtpEnabled) methods.push('sms_otp');
-      if (settings.studentWhatsappOtpEnabled) methods.push('whatsapp_otp');
+    if (settings && settings.studentPortalLoginEnabled === false) {
+      throw new BadRequestException('Login disabled');
     }
+
+    const methods = {
+      magicLink: settings ? !!settings.studentMagicLinkEnabled : true,
+      emailOtp: settings ? !!settings.studentEmailOtpEnabled : true,
+      smsOtp: settings ? !!settings.studentSmsOtpEnabled : false,
+      whatsappOtp: settings ? !!settings.studentWhatsappOtpEnabled : false,
+    };
 
     return {
       exists: true,
@@ -141,7 +178,7 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
       throw new BadRequestException('Too many requests. Please try again later.');
     }
 
-    const tenantId = req.headers['x-tenant-id'] as string || 'studymetro-global';
+    const tenantId = (req as any).tenantId || req.headers['x-tenant-id'] as string || 'studymetro-global';
     if (!body.email || !body.method) {
       throw new BadRequestException('Email and method are required');
     }
@@ -150,7 +187,7 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
       where: {
         email: { equals: body.email.trim(), mode: 'insensitive' },
         tenantId,
-        studentPortalId: { not: null },
+        deletedAt: null,
       },
     });
 
@@ -158,10 +195,22 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
       throw new NotFoundException('Student account not found');
     }
 
+    if (!lead.studentPortalId) {
+      const newPortalId = await this.generateNextStudentPortalId();
+      await this.prisma.lead.update({
+        where: { id: lead.id },
+        data: { studentPortalId: newPortalId },
+      });
+      lead.studentPortalId = newPortalId;
+    }
+
     // Verify method is enabled
     const settings = await this.prisma.emailSetting.findUnique({
       where: { tenantId },
     });
+    if (settings && settings.studentPortalLoginEnabled === false) {
+      throw new BadRequestException('Login disabled');
+    }
     if (settings) {
       if (body.method === 'magic_link' && !settings.studentMagicLinkEnabled) {
         throw new BadRequestException('Magic Link is disabled by admin');
@@ -203,9 +252,9 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
           tenantId
         );
       } catch (err: any) {
-        this.logger.error(`Failed to send magic link: ${err.message}`);
-        // For local development fallback if SMTP is not configured
-        this.logger.warn(`FALLBACK: Magic Link URL: ${magicLink}`);
+        this.logger.error(`SMTP delivery failed for lead ${lead.id}. Reason: ${err.message}`);
+        this.logger.warn('Magic Link generated.');
+        throw new BadRequestException('Email service is currently unavailable. Please contact support or enable SMTP.');
       }
 
       return { success: true, message: 'Magic link sent' };
@@ -233,8 +282,9 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
             tenantId
           );
         } catch (err: any) {
-          this.logger.error(`Failed to send OTP email: ${err.message}`);
-          this.logger.warn(`FALLBACK: OTP Code: ${otp}`);
+          this.logger.error(`SMTP delivery failed for lead ${lead.id}. Reason: ${err.message}`);
+          this.logger.warn('Email OTP generated for student.');
+          throw new BadRequestException('Email service is currently unavailable. Please contact support or enable SMTP.');
         }
       } else if (body.method === 'sms_otp') {
         await this.sendSmsOtp(lead.phone || 'Unknown', otp);
@@ -257,7 +307,7 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
       throw new BadRequestException('Too many requests. Please try again later.');
     }
 
-    const tenantId = req.headers['x-tenant-id'] as string || 'studymetro-global';
+    const tenantId = (req as any).tenantId || req.headers['x-tenant-id'] as string || 'studymetro-global';
     const now = new Date();
 
     let lead;
@@ -291,7 +341,7 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
         where: {
           email: { equals: body.email.trim(), mode: 'insensitive' },
           tenantId,
-          studentPortalId: { not: null },
+          deletedAt: null,
         },
       });
 
@@ -339,6 +389,7 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
       studentPortalId: lead.studentPortalId,
       firstName: lead.firstName,
       lastName: lead.lastName,
+      jti: crypto.randomUUID(),
     };
 
     const token = this.jwtService.sign(payload);
@@ -423,7 +474,7 @@ export class StudentAuthController implements ISmsOtpSender, IWhatsAppOtpSender 
 
   @Get('branding')
   async getBranding(@Req() req: Request) {
-    const tenantId = req.headers['x-tenant-id'] as string || 'studymetro-global';
+    const tenantId = (req as any).tenantId || req.headers['x-tenant-id'] as string || 'studymetro-global';
     let setting = await this.prisma.portalSetting.findUnique({
       where: { tenantId },
     });

@@ -29,8 +29,26 @@ export class TenantMiddleware implements NestMiddleware {
       const hostname = req.hostname;
       // Simple subdomain check, e.g. "orgname.studymetrojaipur.com" -> "orgname"
       const parts = hostname.split('.');
-      if (parts.length > 2 && parts[0] !== 'www' && parts[0] !== 'app') {
+      if (parts.length > 2 && parts[0] !== 'www' && parts[0] !== 'app' && parts[0] !== 'localhost') {
         tenantIdentifier = parts[0];
+      }
+    }
+
+    if (!tenantIdentifier) {
+      if (process.env.DEFAULT_TENANT_ID) {
+        tenantIdentifier = process.env.DEFAULT_TENANT_ID;
+      } else {
+        const activeTenants = await this.prisma.tenant.findMany({ where: { isActive: true } });
+        if (activeTenants.length === 1) {
+          tenantIdentifier = activeTenants[0].id;
+        } else {
+          const defaultTenant = activeTenants.find(t => t.id === 'studymetro-global' || t.domain === 'studymetro-global');
+          if (defaultTenant) {
+            tenantIdentifier = defaultTenant.id;
+          } else if (activeTenants.length > 0) {
+            tenantIdentifier = activeTenants[0].id;
+          }
+        }
       }
     }
 

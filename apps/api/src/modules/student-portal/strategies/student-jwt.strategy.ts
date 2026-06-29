@@ -54,7 +54,7 @@ export class StudentJwtStrategy extends PassportStrategy(Strategy, 'student-jwt'
       where: { id: payload.sub },
     });
 
-    if (!lead || !lead.studentPortalId) {
+    if (!lead || lead.deletedAt || !lead.studentPortalId) {
       throw new UnauthorizedException('Student profile not found');
     }
 

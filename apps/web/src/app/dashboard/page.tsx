@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/auth-context';
 
+
+
 const parseLocalISOString = (s: string) => {
   if (!s) return new Date();
   const [datePart, timePart] = s.split('T');
@@ -313,7 +315,7 @@ export default function DashboardPage() {
         </div>
 
         {/* KPI Cards Grid */}
-        <section className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+        <div className="dashboard-kpi-grid">
           <div className="kpi-card" style={{ borderLeft: '3px solid #3b82f6' }}>
             <div className="kpi-label">My Leads</div>
             <div className="kpi-value">{myLeadsCount}</div>
@@ -343,7 +345,7 @@ export default function DashboardPage() {
             <div className="kpi-value" style={{ color: '#dc2626' }}>{overdueFollowups.length}</div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Missed schedules</div>
           </div>
-        </section>
+        </div>
 
         {/* Split Columns */}
         <div style={{ display: 'flex', padding: '0 20px', gap: '20px', marginTop: '20px', flexWrap: 'wrap' }}>
@@ -600,7 +602,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards Grid */}
-      <section className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+      <div className="dashboard-kpi-grid">
         <div className="kpi-card" style={{ borderLeft: '3px solid #3b82f6' }}>
           <div className="kpi-label">Study Abroad</div>
           <div className="kpi-value">{studyAbroadCount}</div>
@@ -630,7 +632,7 @@ export default function DashboardPage() {
           <div className="kpi-value" style={{ color: '#dc2626' }}>{expiringDocs.length}</div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Expiry within 90 days</div>
         </div>
-      </section>
+      </div>
 
       {/* Study Abroad Admissions Funnel */}
       {uniWidgets && (
@@ -639,7 +641,7 @@ export default function DashboardPage() {
             <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               🎓 Study Abroad Admissions Funnel
             </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px' }}>
+            <div className="funnel-grid">
               <div style={{ padding: '8px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '4px', textAlign: 'center' }}>
                 <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: 700 }}>Applications in Progress</div>
                 <div style={{ fontSize: '18px', fontWeight: 800, color: '#0284c7', marginTop: '4px' }}>{uniWidgets.applicationsInProgress}</div>
@@ -675,7 +677,7 @@ export default function DashboardPage() {
           <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
             💬 Communication Hub Statistics
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+          <div className="comm-grid">
             <div style={{ padding: '8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', textAlign: 'center' }}>
               <div style={{ fontSize: '10px', color: '#166534', fontWeight: 700 }}>Messages Sent Today</div>
               <div style={{ fontSize: '18px', fontWeight: 800, color: '#16a34a', marginTop: '4px' }}>{commStats.messagesSentToday}</div>
@@ -702,7 +704,7 @@ export default function DashboardPage() {
           <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
             📊 Category Ingress Counters
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px' }}>
+          <div className="ingress-grid">
             <div style={{ padding: '8px', background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '4px', textAlign: 'center' }}>
               <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Study Abroad</div>
               <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary-color)' }}>{studyAbroadCount}</div>
@@ -736,7 +738,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Compliance / Readiness score overview banner */}
-      <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '0 20px', marginTop: '10px' }}>
+      <div className="progress-grid">
         <div style={{ padding: '16px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h4 style={{ margin: 0, fontSize: '13px', color: '#065f46', fontWeight: 700 }}>Admission Ready Candidates</h4>
@@ -752,7 +754,7 @@ export default function DashboardPage() {
           </div>
           <span style={{ fontSize: '24px', fontWeight: 800, color: '#d97706' }}>{needsAttentionCount}</span>
         </div>
-      </section>
+      </div>
 
       {/* Split Columns */}
       <div style={{ display: 'flex', padding: '0 20px', gap: '20px', marginTop: '20px', flexWrap: 'wrap' }}>
