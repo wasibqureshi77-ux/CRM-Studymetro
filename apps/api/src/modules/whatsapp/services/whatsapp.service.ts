@@ -62,6 +62,8 @@ export class WhatsappService {
   }
 
   async sendTemplateMessage(tenantId: string, leadId: string, templateId: string, variablesMap: Record<string, string>) {
+    console.log(`[Whatsapp] Outbound Template Message Send requested. Tenant: ${tenantId}, Lead: ${leadId}, Template ID: ${templateId}`);
+    
     const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
     const template = await this.prisma.whatsappTemplate.findUnique({ where: { id: templateId } });
     const instance = await this.prisma.whatsappInstance.findFirst({
@@ -69,9 +71,11 @@ export class WhatsappService {
     });
 
     if (!lead || !template || !instance) {
+      console.error(`[Whatsapp] Template Send Failure: lead exists: ${!!lead}, template exists: ${!!template}, connected instance exists: ${!!instance}`);
       throw new Error('Required Lead, Template or Connected Instance missing');
     }
 
+    console.log(`[Whatsapp] Selected Instance ID: ${instance.id}, Destination Phone: ${lead.phone}`);
     let body = template.message;
     for (const key of Object.keys(variablesMap)) {
       body = body.replace(new RegExp(`{{${key}}}`, 'g'), variablesMap[key]);
@@ -88,21 +92,26 @@ export class WhatsappService {
         status: 'PENDING',
       },
     });
+    console.log(`[Whatsapp] Template message persisted: ${dbMsg.id}, Body: "${body}"`);
 
     await this.queue.enqueueMessage(instance.id, lead.phone, { text: body }, dbMsg.id);
     return dbMsg;
   }
 
   async sendManualMessage(tenantId: string, leadId: string, body: string, mediaUrl?: string, fileName?: string) {
+    console.log(`[Whatsapp] Outbox Dispatch Request - Tenant: ${tenantId}, Lead ID: ${leadId}`);
+    
     const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
     const instance = await this.prisma.whatsappInstance.findFirst({
       where: { tenantId, status: 'CONNECTED' },
     });
 
     if (!lead || !instance) {
+      console.error(`[Whatsapp] Dispatch Failure: lead exists: ${!!lead}, connected instance exists: ${!!instance}`);
       throw new Error('No connected WhatsApp instance found for tenant.');
     }
 
+    console.log(`[Whatsapp] Selected Instance ID: ${instance.id}, Destination Phone: ${lead.phone}`);
     const type = mediaUrl ? (mediaUrl.endsWith('.pdf') ? 'PDF' : 'IMAGE') : 'TEXT';
     const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -118,6 +127,7 @@ export class WhatsappService {
         status: 'PENDING',
       },
     });
+    console.log(`[Whatsapp] Message persisted in DB: ${dbMsg.id}, Status: PENDING`);
 
     let sendContent: any = { text: body };
     if (mediaUrl) {

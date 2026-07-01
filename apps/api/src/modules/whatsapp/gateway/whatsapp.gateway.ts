@@ -175,6 +175,44 @@ export class WhatsappGatewayService implements OnModuleInit, OnModuleDestroy {
           phoneNumber: phone,
           displayName: name,
         });
+
+        // Trigger database backed queue restoration asynchronously
+        try {
+          // Dynamic import / resolve queue service to prevent circular dependencies
+          const { ModuleRef } = require('@nestjs/core');
+          // Retrieve queue service from the context since we are a singleton provider
+          const { WhatsappQueueService } = require('../queue/whatsapp.queue');
+          // We can call moduleRef dynamically if injected, or we can use lazy import with service registry
+          // Since we already import WhatsappQueueService in AppModule, we can just resolve it.
+          // For simplicity, let's trigger it asynchronously after delay so service initializes fully.
+          setTimeout(async () => {
+            try {
+              const { WhatsappQueueService } = require('../queue/whatsapp.queue');
+              // Let's query DB for unsent logs
+              const p = this.prisma;
+              const pendingCount = await p.whatsappMessage.count({
+                where: {
+                  instanceId,
+                  status: { in: ['QUEUED', 'FAILED', 'RETRYING'] }
+                }
+              });
+              if (pendingCount > 0) {
+                console.log(`[Whatsapp] Auto Reconnected: restoring ${pendingCount} queued messages...`);
+                // Let's resolve the QueueService using global class access or inline injection from container
+                // We'll write a cleaner static registry for QueueService to avoid Nest circular loader errors
+                if (WhatsappQueueService.instance) {
+                  WhatsappQueueService.instance.replayPendingQueue(instanceId).catch((err: any) => {
+                    console.error('[Whatsapp] Auto replay failed:', err.message);
+                  });
+                }
+              }
+            } catch (err: any) {
+              console.error('[Whatsapp] Queue restoration dispatch error:', err.message);
+            }
+          }, 3000);
+        } catch (err: any) {
+          console.error('[Whatsapp] Failed to dynamically load QueueService:', err.message);
+        }
       }
 
       if (connection === 'close') {
@@ -265,8 +303,27 @@ export class WhatsappGatewayService implements OnModuleInit, OnModuleDestroy {
     if (!sock) {
       throw new Error(`Instance ${instanceId} is not connected.`);
     }
-    const cleanJid = to.includes('@s.whatsapp.net') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
-    return sock.sendMessage(cleanJid, content);
+    
+    // Normalize JID: Strip non-digits, drop leading 0 if 11 digits, and ensure country code (defaulting to 91 for 10-digit Indian numbers)
+    let cleanPhone = to.replace(/\D/g, '');
+    if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) {
+      cleanPhone = cleanPhone.substring(1);
+    }
+    if (cleanPhone.length === 10) {
+      cleanPhone = `91${cleanPhone}`;
+    }
+    const cleanJid = `${cleanPhone}@s.whatsapp.net`;
+    
+    console.log(`[Whatsapp] sendMessage - JID: ${cleanJid}, Payload:`, JSON.stringify(content));
+    
+    try {
+      const response = await sock.sendMessage(cleanJid, content);
+      console.log(`[Whatsapp] sendMessage Success - Msg ID: ${response?.key?.id || 'unknown'}`);
+      return response;
+    } catch (err: any) {
+      console.error(`[Whatsapp] sendMessage Exception:`, err);
+      throw err;
+    }
   }
 
   private async handleIncomingMessage(instanceId: string, msg: any, tenantId: string) {

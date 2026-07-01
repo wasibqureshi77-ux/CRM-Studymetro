@@ -382,29 +382,19 @@ export class LeadService {
             },
           });
 
-          // Inline import queue to avoid circular dependency
-          const { Queue } = require('bullmq');
-          const myQueue = new Queue('whatsapp-outbox', {
-            connection: {
-              host: process.env.REDIS_HOST || '127.0.0.1',
-              port: parseInt(process.env.REDIS_PORT || '6379'),
-            },
-          });
-          myQueue.on('error', (err: any) => {
-            console.error('BullMQ dynamic queue error: Redis connection refused');
-          });
-          await myQueue.add('send-msg', {
-            messageId: dbMsg.id,
-            to: lead.phone,
-            content: { text: body },
-            instanceId: instance.id,
-          }, {
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 2000 },
-          }).catch((err: any) => {
-            console.error('Failed to add job to dynamic queue:', err.message);
-          });
+          // Dispatch job using standard WhatsappQueueService singleton instance to support Redis offline fallback
+          const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
+          if (WhatsappQueueService.instance) {
+            await WhatsappQueueService.instance.enqueueMessage(instance.id, lead.phone, { text: body }, dbMsg.id);
+            console.log(`[Whatsapp] Auto Lead Message Enqueued successfully for Msg ID: ${dbMsg.id}`);
+          } else {
+            console.error('[Whatsapp] Queue Service instance not registered. Cannot enqueue auto message.');
+          }
+        } else {
+          console.warn(`[Whatsapp] No active connected instance found under tenant ${tenantId} for auto dispatch.`);
         }
+      } else {
+        console.log(`[Whatsapp] No active automation template found for LEAD_CREATED trigger under tenant ${tenantId}.`);
       }
     } catch (err) {
       console.error('Failed to trigger WhatsApp Lead Created automation:', err);
