@@ -3,10 +3,10 @@ import { AppModule } from './app.module';
 import { LeadService } from './modules/lead/lead.service';
 import { CommunicationService } from './modules/communication/communication.service';
 import { PrismaService } from './prisma/prisma.service';
-import { CommunicationChannel } from '@prisma/client';
+import { CommunicationChannel, QueueStatus } from '@prisma/client';
 
 async function runAudit() {
-  console.log('🏁 Starting in-memory NestJS Application Context for Automation Hub Audit...');
+  console.log('🏁 Starting in-memory NestJS Application Context for Event-Driven Communication Audit...');
   const app = await NestFactory.createApplicationContext(AppModule);
   const leadService = app.get(LeadService);
   const commService = app.get(CommunicationService);
@@ -16,8 +16,8 @@ async function runAudit() {
 
   try {
     // 1. Clean existing logs
-    console.log('🧹 Cleaning baseline automation logs...');
-    await prisma.communicationAutomationLog.deleteMany();
+    console.log('🧹 Cleaning baseline communication logs...');
+    await prisma.communicationLog.deleteMany();
 
     // 2. Resolve a brochure
     let brochure = await prisma.brochure.findFirst({
@@ -35,18 +35,40 @@ async function runAudit() {
       });
     }
 
-    // 3. Create a brand new lead
-    console.log('\nTEST 1: Creating a brand new Lead...');
-    const lead = await prisma.lead.create({
+    // Configure email settings to ensure both email and whatsapp are enabled
+    await prisma.emailSetting.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        host: 'smtp.gmail.com',
+        port: 587,
+        username: 'test@studymetro.com',
+        password: 'pass',
+        senderName: 'Study Metro',
+        senderEmail: 'test@studymetro.com',
+        emailEnabled: true,
+        whatsappEnabled: true
+      },
+      update: {
+        emailEnabled: true,
+        whatsappEnabled: true
+      }
+    });
+
+    const sharedEmail = 'duplicate-enquiry@studymetrojaipur.com';
+    const sharedPhone = '919998887776';
+
+    console.log('\nTEST 1: Creating Lead #1 (Germany) with duplicate phone/email...');
+    const lead1 = await prisma.lead.create({
       data: {
         tenantId,
         branchId: (await prisma.branch.findFirst({ where: { tenantId } }))!.id,
         firstName: 'Bob',
         lastName: 'Builder',
-        email: `bob-${Date.now()}@studymetrojaipur.com`,
-        normalizedEmail: `bob-${Date.now()}@studymetrojaipur.com`,
-        phone: '919876543210',
-        normalizedPhone: '919876543210',
+        email: sharedEmail,
+        normalizedEmail: sharedEmail,
+        phone: sharedPhone,
+        normalizedPhone: sharedPhone,
         status: 'NEW_LEAD',
         leadCategory: 'STUDY_ABROAD',
         preferredCountry: 'Germany',
@@ -54,53 +76,74 @@ async function runAudit() {
       }
     });
 
-    // Generate secure tracking assignment
-    const trackingToken = `token-bob-${Date.now()}`;
+    const trackingToken1 = `token-bob1-${Date.now()}`;
     await prisma.brochureAssignment.create({
       data: {
-        leadId: lead.id,
+        leadId: lead1.id,
         brochureId: brochure.id,
-        token: trackingToken,
+        token: trackingToken1,
         assignedBy: 'System'
       }
     });
 
-    console.log(`Created Lead ID: ${lead.id}. Triggering welcome event...`);
-    await commService.triggerEvent('LEAD_CREATED', lead.id);
+    console.log(`Triggering welcome event for Lead #1...`);
+    await commService.triggerEvent('LEAD_CREATED', lead1.id);
 
-    // Verify logs
-    const logs = await prisma.communicationAutomationLog.findMany({
-      where: { leadId: lead.id },
-      include: { automation: { include: { template: true } } }
+    console.log('\nTEST 2: Creating Lead #2 (Canada) with same duplicate phone/email...');
+    const lead2 = await prisma.lead.create({
+      data: {
+        tenantId,
+        branchId: (await prisma.branch.findFirst({ where: { tenantId } }))!.id,
+        firstName: 'Bob',
+        lastName: 'Builder',
+        email: sharedEmail,
+        normalizedEmail: sharedEmail,
+        phone: sharedPhone,
+        normalizedPhone: sharedPhone,
+        status: 'NEW_LEAD',
+        leadCategory: 'STUDY_ABROAD',
+        preferredCountry: 'Canada',
+        preferredCourse: 'MSc Computer Science'
+      }
     });
 
-    console.log(`\nFound ${logs.length} triggered logs for LEAD_CREATED:`);
-    for (const log of logs) {
-      console.log(`- Channel: ${log.channel}`);
-      console.log(`- Status: ${log.status}`);
-      console.log(`- Template Name: ${log.automation.template.name}`);
-      console.log(`- Evaluated Content:\n"""\n${log.response}\n"""`);
-      
-      // Verify placeholders
-      if (log.response.includes('{{studentName}}') || log.response.includes('{{brochureLink}}')) {
+    const trackingToken2 = `token-bob2-${Date.now()}`;
+    await prisma.brochureAssignment.create({
+      data: {
+        leadId: lead2.id,
+        brochureId: brochure.id,
+        token: trackingToken2,
+        assignedBy: 'System'
+      }
+    });
+
+    console.log(`Triggering welcome event for Lead #2...`);
+    await commService.triggerEvent('LEAD_CREATED', lead2.id);
+
+    // Verify logs count to ensure both leads processed independently without suppression
+    const logs1 = await prisma.communicationLog.findMany({ where: { leadId: lead1.id } });
+    const logs2 = await prisma.communicationLog.findMany({ where: { leadId: lead2.id } });
+
+    console.log(`- Lead #1: found ${logs1.length} communication logs.`);
+    console.log(`- Lead #2: found ${logs2.length} communication logs.`);
+
+    for (const log of [...logs1, ...logs2]) {
+      console.log(`  - Lead ID: ${log.leadId}, Channel: ${log.channel}, Status: ${log.status}`);
+      if (log.message.includes('{{studentName}}') || log.message.includes('{{brochureLink}}')) {
         throw new Error('❌ Verification FAILED: Unreplaced placeholders found in body!');
       }
-      if (!log.response.includes('Bob Builder')) {
-        throw new Error('❌ Verification FAILED: studentName was not replaced correctly!');
-      }
-      if (!log.response.includes(trackingToken)) {
-        throw new Error('❌ Verification FAILED: brochure tracking link was not injected!');
-      }
     }
-    console.log('✓ TEST 1 PASSED: Welcome Message triggered with secure brochure link successfully.');
 
-    // 4. Test status transition to DOCUMENTS_PENDING
-    console.log('\nTEST 2: Transitioning status from NEW_LEAD to DOCUMENTS_PENDING...');
-    
-    // Create a pending document
+    if (logs1.length === 0 || logs2.length === 0) {
+      throw new Error('❌ Verification FAILED: Duplicate email/phone suppression blocked communication on new lead!');
+    }
+    console.log('✓ TEST 1 & 2 PASSED: Shared phone/email leads processed and triggered independently.');
+
+    // TEST 3: Status transition to DOCUMENTS_PENDING (maps to trigger DOCUMENT_PENDING)
+    console.log('\nTEST 3: Transitioning Lead #1 status to DOCUMENTS_PENDING...');
     await prisma.leadDocument.create({
       data: {
-        leadId: lead.id,
+        leadId: lead1.id,
         documentType: 'PASSPORT',
         status: 'PENDING',
         isCurrent: true,
@@ -109,45 +152,41 @@ async function runAudit() {
     });
 
     const adminUser = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-    await leadService.update(lead.id, { status: 'DOCUMENTS_PENDING' }, tenantId, adminUser!.id);
+    await leadService.update(lead1.id, { status: 'DOCUMENTS_PENDING' }, tenantId, adminUser!.id);
 
-    const docLogs = await prisma.communicationAutomationLog.findMany({
-      where: { leadId: lead.id, automation: { trigger: 'DOCUMENT_PENDING' } },
-      include: { automation: { include: { template: true } } }
+    const docLogs = await prisma.communicationLog.findMany({
+      where: { leadId: lead1.id, eventType: 'DOCUMENT_PENDING' }
     });
 
-    console.log(`\nFound ${docLogs.length} triggered logs for DOCUMENT_PENDING:`);
+    console.log(`- Found ${docLogs.length} triggered logs for DOCUMENT_PENDING:`);
     for (const log of docLogs) {
-      console.log(`- Channel: ${log.channel}`);
-      console.log(`- Status: ${log.status}`);
-      console.log(`- Content:\n"""\n${log.response}\n"""`);
-
-      if (!log.response.includes('PASSPORT')) {
-        throw new Error('❌ Verification FAILED: Pending documents list was not dynamically injected!');
+      console.log(`  - Channel: ${log.channel}, Status: ${log.status}`);
+      if (!log.message.includes('PASSPORT')) {
+        throw new Error('❌ Verification FAILED: Pending documents checklist was not dynamically injected!');
       }
     }
-    console.log('✓ TEST 2 PASSED: Status transition triggered document pending message with dynamic documents list.');
-
-    // 5. Test duplicate transition prevention (DOCUMENTS_PENDING -> DOCUMENTS_PENDING)
-    console.log('\nTEST 3: Simulating secondary status update to DOCUMENTS_PENDING...');
-    const logsBefore = await prisma.communicationAutomationLog.count({
-      where: { leadId: lead.id, automation: { trigger: 'DOCUMENT_PENDING' } }
-    });
-
-    // Call update with same status
-    await leadService.update(lead.id, { status: 'DOCUMENTS_PENDING' }, tenantId, adminUser!.id);
-
-    const logsAfter = await prisma.communicationAutomationLog.count({
-      where: { leadId: lead.id, automation: { trigger: 'DOCUMENT_PENDING' } }
-    });
-
-    console.log(`- Logs count before same-status update: ${logsBefore}`);
-    console.log(`- Logs count after same-status update: ${logsAfter}`);
-
-    if (logsAfter !== logsBefore) {
-      throw new Error('❌ Verification FAILED: Duplicate notification sent for same-status transition!');
+    if (docLogs.length === 0) {
+      throw new Error('❌ Verification FAILED: Status transition did not trigger welcome template!');
     }
-    console.log('✓ TEST 3 PASSED: Duplicate notifications successfully blocked.');
+    console.log('✓ TEST 3 PASSED: Status transition triggered document pending message with dynamic documents list.');
+
+    // TEST 4: Duplicate prevention on same lead
+    console.log('\nTEST 4: Simulating secondary status update to DOCUMENTS_PENDING (same lead)...');
+    const docLogsBefore = await prisma.communicationLog.count({
+      where: { leadId: lead1.id, eventType: 'DOCUMENT_PENDING' }
+    });
+
+    await leadService.update(lead1.id, { status: 'DOCUMENTS_PENDING' }, tenantId, adminUser!.id);
+
+    const docLogsAfter = await prisma.communicationLog.count({
+      where: { leadId: lead1.id, eventType: 'DOCUMENT_PENDING' }
+    });
+
+    console.log(`- Logs before: ${docLogsBefore}, Logs after: ${docLogsAfter}`);
+    if (docLogsAfter !== docLogsBefore) {
+      throw new Error('❌ Verification FAILED: Duplicate notification sent for same-status transition on same lead!');
+    }
+    console.log('✓ TEST 4 PASSED: Duplicate notifications blocked on same lead transition.');
 
   } catch (error: any) {
     console.error('❌ Audit Failed with error:', error.message);

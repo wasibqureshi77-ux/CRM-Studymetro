@@ -414,8 +414,27 @@ export class CommunicationService implements OnModuleInit {
               lead.tenantId
             );
           } else {
-            // Mock WhatsApp (simply log to console)
-            console.log(`[WHATSAPP MOCK] Sent message to ${recipient}: ${textMessage}`);
+            // Real WhatsApp sending
+            const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
+            const instance = await this.prisma.whatsappInstance.findFirst({
+              where: { tenantId: lead.tenantId, status: 'CONNECTED' }
+            });
+            if (instance && WhatsappQueueService.instance) {
+              const dbMsg = await this.prisma.whatsappMessage.create({
+                data: {
+                  leadId: lead.id,
+                  instanceId: instance.id,
+                  direction: 'OUTBOUND',
+                  messageType: 'TEXT',
+                  messageId: `msg-auto-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  body: textMessage,
+                  status: 'PENDING'
+                }
+              });
+              await WhatsappQueueService.instance.enqueueMessage(instance.id, recipient, { text: textMessage }, dbMsg.id);
+            } else {
+              throw new Error('No connected WhatsApp gateway socket available.');
+            }
           }
 
           // Create sent log
@@ -655,12 +674,11 @@ export class CommunicationService implements OnModuleInit {
     }
   }
 
-  // --- ENTERPRISE AUTOMATION SYSTEM ---
+  // --- EVENT-DRIVEN COMMUNICATION SYSTEM ---
 
   async triggerEvent(triggerName: string, leadId: string, context: Record<string, string> = {}) {
     console.log(`[CommunicationAutomation] Triggering event: ${triggerName} for Lead ID: ${leadId}`);
     
-    // Find active automations matching the trigger
     const lead = await this.prisma.lead.findUnique({
       where: { id: leadId },
       include: { studentProfile: true }
@@ -673,15 +691,33 @@ export class CommunicationService implements OnModuleInit {
 
     const tenantId = lead.tenantId;
 
-    const automations = await this.prisma.communicationAutomation.findMany({
-      where: { tenantId, trigger: triggerName, enabled: true },
-      include: { template: true }
+    // Map system event triggerName to template name
+    const eventToTemplateNameMap: Record<string, string> = {
+      'LEAD_CREATED': 'WELCOME',
+      'DOCUMENT_PENDING': 'DOCUMENT_REQUEST',
+      'FOLLOWUP_REMINDER': 'FOLLOWUP_REMINDER',
+      'VISA_APPROVED': 'VISA_APPROVED',
+      'OFFER_RECEIVED': 'OFFER_RECEIVED'
+    };
+
+    const templateName = eventToTemplateNameMap[triggerName] || triggerName;
+
+    // Query the CommunicationTemplate model
+    const templates = await this.prisma.communicationTemplate.findMany({
+      where: { name: templateName, isActive: true }
     });
 
-    if (automations.length === 0) {
-      console.log(`[Whatsapp]\nMissing template: ${triggerName}`);
+    if (templates.length === 0) {
+      console.log(`[Whatsapp]\nMissing template: ${templateName}`);
       return;
     }
+
+    // Resolve settings for channel check
+    const settings = await this.prisma.emailSetting.findUnique({
+      where: { tenantId }
+    });
+    const emailEnabled = settings ? settings.emailEnabled : true;
+    const whatsappEnabled = settings ? settings.whatsappEnabled : false;
 
     // Resolve appUrl dynamically
     const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetrojaipur.com';
@@ -736,188 +772,141 @@ export class CommunicationService implements OnModuleInit {
     const offerLetterLink = offerDoc ? `${appUrl}/api/v1/leads/documents/download/${offerDoc.id}` : `${appUrl}/student/login`;
     const paymentLink = `${appUrl}/student/login?redirect=/payments`;
 
-    for (const auto of automations) {
-      // Prevent duplicates: Check if this exact automation was already triggered for this lead
-      const existingLog = await this.prisma.communicationAutomationLog.findFirst({
-        where: {
-          automationId: auto.id,
-          leadId,
-          status: { in: ['SENT', 'QUEUED'] }
+    // Shared variable parser engine variables
+    const variablesMap = {
+      studentName: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+      name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+      leadNumber: lead.leadNumber || '',
+      leadId: lead.id,
+      course: lead.preferredCourse || lead.studentProfile?.targetCourse || '',
+      country: lead.preferredCountry || lead.studentProfile?.targetCountry || '',
+      intake: lead.intendedIntake || lead.studentProfile?.intake || '',
+      assignedCounsellor: counsellorName,
+      counsellor: counsellorName,
+      brochureTitle,
+      brochureLink,
+      portalLink: `${appUrl}/student/login`,
+      pendingDocuments,
+      documentList: pendingDocuments,
+      followupDate,
+      offerLetterLink,
+      visaStatus,
+      paymentLink,
+      today: new Date().toLocaleDateString(),
+      ...context
+    };
+
+    for (const template of templates) {
+      const channel = template.channel; // EMAIL or WHATSAPP
+
+      // Check if channel is enabled
+      if (channel === 'EMAIL' && !emailEnabled) {
+        console.log(`[CommunicationAutomation] Email channel is disabled. Skipping template ${template.id}`);
+        continue;
+      }
+      if (channel === 'WHATSAPP' && !whatsappEnabled) {
+        console.log(`[CommunicationAutomation] WhatsApp channel is disabled. Skipping template ${template.id}`);
+        continue;
+      }
+
+      // Check for duplicates only for status transitions/reminders on the *same* lead
+      if (triggerName !== 'LEAD_CREATED') {
+        const existingLog = await this.prisma.communicationLog.findFirst({
+          where: {
+            leadId,
+            eventType: triggerName,
+            channel,
+            status: 'SENT'
+          }
+        });
+        if (existingLog) {
+          console.log(`[CommunicationAutomation] Duplicate prevention: event "${triggerName}" on channel "${channel}" already dispatched for lead ${leadId}. Skipping.`);
+          continue;
         }
-      });
-      if (existingLog) {
-        console.log(`[CommunicationAutomation] Duplicate prevention: automation "${auto.name}" already dispatched/queued for lead ${leadId}. Skipping.`);
-        continue;
       }
 
-      // Evaluate conditions (Rule Builder)
-      const isMatch = this.evaluateConditions(lead, auto.conditions);
-      if (!isMatch) {
-        console.log(`[CommunicationAutomation] Automation "${auto.name}" rule mismatch. Skipping.`);
-        continue;
-      }
-
-      // Populate evaluated text body
-      const variablesMap = {
-        studentName: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
-        leadNumber: lead.leadNumber || '',
-        course: lead.preferredCourse || lead.studentProfile?.targetCourse || '',
-        country: lead.preferredCountry || lead.studentProfile?.targetCountry || '',
-        intake: lead.intendedIntake || lead.studentProfile?.intake || '',
-        assignedCounsellor: counsellorName,
-        brochureTitle,
-        brochureLink,
-        portalLink: `${appUrl}/student/login`,
-        pendingDocuments,
-        followupDate,
-        offerLetterLink,
-        visaStatus,
-        paymentLink,
-        today: new Date().toLocaleDateString(),
-        ...context
-      };
-
-      let evaluatedBody = auto.template.body;
-      let evaluatedSubject = auto.template.subject || '';
+      // Evaluate body using the shared variables parser engine
+      let evaluatedBody = template.content;
+      let evaluatedSubject = template.subject || '';
 
       for (const [key, value] of Object.entries(variablesMap)) {
-        evaluatedBody = evaluatedBody.replace(new RegExp(`{{${key}}}`, 'g'), value);
-        evaluatedSubject = evaluatedSubject.replace(new RegExp(`{{${key}}}`, 'g'), value);
+        const placeholderRegex = new RegExp(`{{${key}}}`, 'g');
+        evaluatedBody = evaluatedBody.replace(placeholderRegex, value || '');
+        evaluatedSubject = evaluatedSubject.replace(placeholderRegex, value || '');
       }
 
-      if (auto.delayType === 'IMMEDIATE') {
-        await this.executeAutomation(auto.id, leadId, auto.channels, evaluatedSubject, evaluatedBody, auto.maxRetries);
-      } else {
-        // Enqueue delayed / scheduled automation log
-        for (const channel of auto.channels) {
-          await this.prisma.communicationAutomationLog.create({
-            data: {
-              automationId: auto.id,
-              leadId,
-              channel,
-              status: 'QUEUED',
-              response: `Delayed trigger: ${auto.delayDuration || 'scheduled'}`,
-            }
-          });
-        }
-        console.log(`[CommunicationAutomation] Automation ${auto.name} enqueued with delay settings: ${auto.delayDuration}`);
-      }
-    }
-  }
-
-  private evaluateConditions(lead: any, conditions: any): boolean {
-    if (!conditions) return true;
-    try {
-      const cond = typeof conditions === 'string' ? JSON.parse(conditions) : conditions;
-      if (Object.keys(cond).length === 0) return true;
-      for (const [key, val] of Object.entries(cond)) {
-        const matchVal = String(val).toLowerCase().trim();
-        if (key === 'country') {
-          const leadCountry = String(lead.preferredCountry || lead.studentProfile?.targetCountry || '').toLowerCase().trim();
-          if (leadCountry !== matchVal) return false;
-        }
-        if (key === 'course') {
-          const leadCourse = String(lead.preferredCourse || lead.studentProfile?.targetCourse || '').toLowerCase().trim();
-          if (!leadCourse.includes(matchVal)) return false;
-        }
-        if (key === 'status') {
-          const leadStatus = String(lead.status || '').toLowerCase().trim();
-          if (leadStatus !== matchVal) return false;
-        }
-      }
-      return true;
-    } catch {
-      return true;
-    }
-  }
-
-  private async executeAutomation(automationId: string, leadId: string, channels: string[], subject: string, body: string, maxRetries: number) {
-    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
-    if (!lead) return;
-
-    for (const channel of channels) {
-      const log = await this.prisma.communicationAutomationLog.create({
-        data: {
-          automationId,
-          leadId,
-          channel,
-          status: 'PROCESSING',
-          response: body
-        }
-      });
-
+      // Send the communication directly
       try {
-        if (channel === 'WHATSAPP') {
-          // Resolve standard WhatsApp Gateway active socket
-          const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
-          const instance = await this.prisma.whatsappInstance.findFirst({
-            where: { tenantId: lead.tenantId, status: 'CONNECTED' }
-          });
-          if (instance && WhatsappQueueService.instance) {
-            // Build custom db message tracking row
-            const dbMsg = await this.prisma.whatsappMessage.create({
+        if (channel === 'EMAIL') {
+          const recipient = lead.email;
+          if (recipient) {
+            await this.emailService.sendEmail(
+              recipient,
+              evaluatedSubject || 'Study Metro Update',
+              evaluatedBody,
+              evaluatedBody.replace(/\n/g, '<br/>'),
+              lead.tenantId
+            );
+
+            await this.prisma.communicationLog.create({
               data: {
-                leadId,
-                instanceId: instance.id,
-                direction: 'OUTBOUND',
-                messageType: 'TEXT',
-                messageId: `msg-auto-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                body,
-                status: 'PENDING'
+                leadId: lead.id,
+                channel: 'EMAIL',
+                eventType: triggerName,
+                status: 'SENT',
+                recipient,
+                message: evaluatedBody
               }
             });
-            await WhatsappQueueService.instance.enqueueMessage(instance.id, lead.phone, { text: body }, dbMsg.id);
-            await this.prisma.communicationAutomationLog.update({
-              where: { id: log.id },
-              data: { status: 'SENT' }
-            });
-          } else {
-            throw new Error('No connected WhatsApp gateway socket available.');
+            console.log(`[CommunicationAutomation] Email sent successfully for trigger ${triggerName} to ${recipient}`);
           }
-        } else if (channel === 'EMAIL') {
-          if (lead.email) {
-            await this.emailService.sendEmail(lead.email, subject || 'Notification', body, `<p>${body.replace(/\n/g, '<br/>')}</p>`, lead.tenantId);
-            await this.prisma.communicationAutomationLog.update({
-              where: { id: log.id },
-              data: { status: 'SENT' }
+        } else if (channel === 'WHATSAPP') {
+          const recipient = lead.phone;
+          if (recipient) {
+            const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
+            const instance = await this.prisma.whatsappInstance.findFirst({
+              where: { tenantId: lead.tenantId, status: 'CONNECTED' }
             });
-          } else {
-            throw new Error('Lead email address missing.');
-          }
-        } else if (channel === 'SMS') {
-          console.log(`[SMS MOCK] Send: ${body} to ${lead.phone}`);
-          await this.prisma.communicationAutomationLog.update({
-            where: { id: log.id },
-            data: { status: 'SENT' }
-          });
-        } else if (channel === 'PORTAL') {
-          await this.prisma.studentNotification.create({
-            data: {
-              leadId,
-              title: subject || 'New Notification',
-              message: body
+            if (instance && WhatsappQueueService.instance) {
+              const dbMsg = await this.prisma.whatsappMessage.create({
+                data: {
+                  leadId: lead.id,
+                  instanceId: instance.id,
+                  direction: 'OUTBOUND',
+                  messageType: 'TEXT',
+                  messageId: `msg-auto-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  body: evaluatedBody,
+                  status: 'PENDING'
+                }
+              });
+              await WhatsappQueueService.instance.enqueueMessage(instance.id, recipient, { text: evaluatedBody }, dbMsg.id);
+
+              await this.prisma.communicationLog.create({
+                data: {
+                  leadId: lead.id,
+                  channel: 'WHATSAPP',
+                  eventType: triggerName,
+                  status: 'SENT',
+                  recipient,
+                  message: evaluatedBody
+                }
+              });
+              console.log(`[CommunicationAutomation] WhatsApp message enqueued successfully for trigger ${triggerName} to ${recipient}`);
+            } else {
+              console.warn('[CommunicationAutomation] No connected WhatsApp instance available or WhatsappQueueService is offline.');
             }
-          });
-          await this.prisma.communicationAutomationLog.update({
-            where: { id: log.id },
-            data: { status: 'SENT', response: 'Portal notification created.' }
-          });
-        } else {
-          // Push notification mock
-          console.log(`[PUSH MOCK] Send: ${body}`);
-          await this.prisma.communicationAutomationLog.update({
-            where: { id: log.id },
-            data: { status: 'SENT', response: 'Push notification executed.' }
-          });
+          }
         }
       } catch (err: any) {
-        console.error(`[CommunicationAutomation] Channel ${channel} execution failed:`, err.message);
-        await this.prisma.communicationAutomationLog.update({
-          where: { id: log.id },
+        console.error(`[CommunicationAutomation] Channel ${channel} execution failed for trigger ${triggerName}:`, err.message);
+        await this.prisma.communicationLog.create({
           data: {
+            leadId,
+            channel: channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
+            eventType: triggerName,
             status: 'FAILED',
-            failedReason: err.message,
-            retryCount: 0
+            recipient: channel === 'EMAIL' ? lead.email || '' : lead.phone || '',
+            message: evaluatedBody
           }
         });
       }

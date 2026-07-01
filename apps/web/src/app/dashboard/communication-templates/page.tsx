@@ -14,13 +14,16 @@ interface Template {
 }
 
 const SUPPORTED_VARIABLES = [
-  '{{name}}',
-  '{{leadId}}',
-  '{{documentList}}',
-  '{{followupDate}}',
-  '{{country}}',
+  '{{studentName}}',
+  '{{leadNumber}}',
   '{{course}}',
-  '{{counsellor}}'
+  '{{country}}',
+  '{{intake}}',
+  '{{assignedCounsellor}}',
+  '{{brochureLink}}',
+  '{{portalLink}}',
+  '{{pendingDocuments}}',
+  '{{today}}'
 ];
 
 const PRESETS = [
@@ -39,6 +42,9 @@ export default function CommunicationTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Channel Tab state
+  const [activeChannelTab, setActiveChannelTab] = useState<'EMAIL' | 'WHATSAPP' | 'SMS' | 'PUSH'>('EMAIL');
 
   // Form states
   const [showForm, setShowForm] = useState(false);
@@ -76,7 +82,7 @@ export default function CommunicationTemplatesPage() {
     setEditingTemplate(null);
     setFormName('WELCOME');
     setCustomName('');
-    setFormChannel('EMAIL');
+    setFormChannel(activeChannelTab === 'WHATSAPP' ? 'WHATSAPP' : 'EMAIL');
     setFormSubject('');
     setFormContent('');
     setFormIsActive(true);
@@ -146,23 +152,29 @@ export default function CommunicationTemplatesPage() {
 
   const renderPreviewContent = (template: Template) => {
     const mockData = {
-      name: 'John Doe',
-      leadId: 'lead-8b73f2a',
-      documentList: '• Passport Bio Page\n• IELTS Test Report Form\n• Undergraduate Marksheets',
-      followupDate: 'Thursday, June 25, 2026 at 3:00 PM',
-      country: 'Canada',
+      studentName: 'John Doe',
+      leadNumber: 'METRO-1023',
       course: 'MSc Data Science',
-      counsellor: 'Sarah SuperAdmin'
+      country: 'Canada',
+      intake: 'Fall 2026',
+      assignedCounsellor: 'Jane Counsellor',
+      brochureLink: 'https://crm.studymetrojaipur.com/brochure/view/mock-token',
+      portalLink: 'https://crm.studymetrojaipur.com/student/login',
+      pendingDocuments: '• Passport Bio Page\n• Undergraduate Marksheets',
+      today: new Date().toLocaleDateString()
     };
 
     let body = template.content;
-    body = body.replace(/\{\{name\}\}/g, mockData.name);
-    body = body.replace(/\{\{leadId\}\}/g, mockData.leadId);
-    body = body.replace(/\{\{documentList\}\}/g, mockData.documentList);
-    body = body.replace(/\{\{followupDate\}\}/g, mockData.followupDate);
-    body = body.replace(/\{\{country\}\}/g, mockData.country);
+    body = body.replace(/\{\{studentName\}\}/g, mockData.studentName);
+    body = body.replace(/\{\{leadNumber\}\}/g, mockData.leadNumber);
     body = body.replace(/\{\{course\}\}/g, mockData.course);
-    body = body.replace(/\{\{counsellor\}\}/g, mockData.counsellor);
+    body = body.replace(/\{\{country\}\}/g, mockData.country);
+    body = body.replace(/\{\{intake\}\}/g, mockData.intake);
+    body = body.replace(/\{\{assignedCounsellor\}\}/g, mockData.assignedCounsellor);
+    body = body.replace(/\{\{brochureLink\}\}/g, mockData.brochureLink);
+    body = body.replace(/\{\{portalLink\}\}/g, mockData.portalLink);
+    body = body.replace(/\{\{pendingDocuments\}\}/g, mockData.pendingDocuments);
+    body = body.replace(/\{\{today\}\}/g, mockData.today);
 
     return body;
   };
@@ -186,6 +198,8 @@ export default function CommunicationTemplatesPage() {
     }, 50);
   };
 
+  const filteredTemplates = templates.filter(t => t.channel === activeChannelTab);
+
   return (
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
@@ -202,6 +216,32 @@ export default function CommunicationTemplatesPage() {
         </button>
       </div>
 
+      {/* Channel Tabs */}
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+        {(['EMAIL', 'WHATSAPP', 'SMS', 'PUSH'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveChannelTab(tab)}
+            style={{
+              padding: '8px 16px',
+              background: activeChannelTab === tab ? '#3b82f6' : 'none',
+              color: activeChannelTab === tab ? '#fff' : 'var(--text-color)',
+              border: activeChannelTab === tab ? 'none' : '1px solid var(--border-color)',
+              borderRadius: '4px',
+              fontWeight: 600,
+              fontSize: '13px',
+              cursor: 'pointer'
+            }}
+          >
+            {tab === 'EMAIL' && '📧 Email Templates'}
+            {tab === 'WHATSAPP' && '💬 WhatsApp Templates'}
+            {tab === 'SMS' && '📟 SMS (Future)'}
+            {tab === 'PUSH' && '🔔 Push Notifications (Future)'}
+          </button>
+        ))}
+      </div>
+
       {error && (
         <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', border: '1px solid #fee2e2', color: '#b91c1c', borderRadius: '6px', fontSize: '13px' }}>
           ⚠️ {error}
@@ -214,9 +254,9 @@ export default function CommunicationTemplatesPage() {
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
             Loading templates...
           </div>
-        ) : templates.length === 0 ? (
+        ) : filteredTemplates.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            No communication templates found. Set up your first template.
+            No templates found for this channel tab. Set up your first template.
           </div>
         ) : (
           <table className="dense-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -231,7 +271,7 @@ export default function CommunicationTemplatesPage() {
               </tr>
             </thead>
             <tbody>
-              {templates.map((t) => (
+              {filteredTemplates.map((t) => (
                 <tr key={t.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                   <td style={{ padding: '12px 16px' }}>
                     <strong>{t.name}</strong>

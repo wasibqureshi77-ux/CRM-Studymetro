@@ -40,12 +40,15 @@ export class WhatsappWebSocketGateway
     this.logger.log(`Client disconnected: ${client.id}`);
   }
 
-  // Emits QR or connection status changes to specific tenants or globally
   emitToTenant(tenantId: string, event: string, data: any) {
-    this.server.to(`tenant:${tenantId}`).emit(event, data);
+    if (this.server) {
+      this.server.to(`tenant:${tenantId}`).emit(event, data);
+    }
   }
 
   emitUpdate(event: string, data: any) {
-    this.server.emit(event, data);
+    if (this.server) {
+      this.server.emit(event, data);
+    }
   }
 }
