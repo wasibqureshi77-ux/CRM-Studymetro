@@ -118,4 +118,69 @@ export class WhatsappController {
       },
     });
   }
+
+  @Post('seed-defaults')
+  async seedDefaults(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    const templatesToSeed = [
+      {
+        name: 'Welcome Template',
+        message: 'Hello {{name}}, welcome to Study Metro! We received your registration. Your Lead Number is {{leadNumber}}.',
+        variables: ['name', 'leadNumber']
+      },
+      {
+        name: 'Document Pending Template',
+        message: 'Hello {{name}}, some documents are still pending for your application. Please upload them as soon as possible.',
+        variables: ['name']
+      },
+      {
+        name: 'Followup Reminder Template',
+        message: 'Hello {{name}}, this is a reminder for your upcoming counselling session scheduled for {{followupDate}}.',
+        variables: ['name', 'followupDate']
+      }
+    ];
+
+    const templateMap: Record<string, string> = {};
+
+    for (const t of templatesToSeed) {
+      let existing = await this.prisma.whatsappTemplate.findFirst({
+        where: { tenantId, name: t.name }
+      });
+      if (!existing) {
+        existing = await this.prisma.whatsappTemplate.create({
+          data: {
+            tenantId,
+            name: t.name,
+            message: t.message,
+            variables: t.variables,
+            isActive: true
+          }
+        });
+      }
+      templateMap[t.name] = existing.id;
+    }
+
+    const automationsToSeed = [
+      { trigger: 'LEAD_CREATED', templateName: 'Welcome Template' },
+      { trigger: 'DOCUMENT_PENDING', templateName: 'Document Pending Template' },
+      { trigger: 'FOLLOWUP_REMINDER', templateName: 'Followup Reminder Template' }
+    ];
+
+    for (const auto of automationsToSeed) {
+      const existingAuto = await this.prisma.whatsappAutomation.findFirst({
+        where: { tenantId, trigger: auto.trigger }
+      });
+      if (!existingAuto) {
+        await this.prisma.whatsappAutomation.create({
+          data: {
+            tenantId,
+            trigger: auto.trigger,
+            templateId: templateMap[auto.templateName],
+            enabled: true
+          }
+        });
+      }
+    }
+    return { success: true };
+  }
 }

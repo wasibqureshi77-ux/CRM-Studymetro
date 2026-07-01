@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { CommunicationService } from './communication.service';
 import { EmailService } from './email.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -212,5 +212,101 @@ export class CommunicationController {
       where: { tenantId }
     });
     return raw ? decrypt(raw.password) : '';
+  }
+
+  // --- ENTERPRISE AUTOMATION API ---
+
+  @Get('autos')
+  async getAutomations(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.getAutomations(tenantId);
+  }
+
+  @Post('autos')
+  @Roles(UserRole.SUPER_ADMIN)
+  async saveAutomation(@Req() req: AuthenticatedRequest, @Body() body: any) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.saveAutomation(tenantId, body);
+  }
+
+  @Patch('autos/:id')
+  @Roles(UserRole.SUPER_ADMIN)
+  async updateAutomation(@Param('id') id: string, @Body() body: any) {
+    return this.communicationService.updateAutomation(id, body);
+  }
+
+  @Delete('autos/:id')
+  @Roles(UserRole.SUPER_ADMIN)
+  async deleteAutomation(@Param('id') id: string) {
+    return this.communicationService.deleteAutomation(id);
+  }
+
+  @Post('autos/:id/clone')
+  @Roles(UserRole.SUPER_ADMIN)
+  async cloneAutomation(@Param('id') id: string) {
+    return this.communicationService.cloneAutomation(id);
+  }
+
+  @Post('autos/export')
+  async exportAutomations(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    const autos = await this.communicationService.getAutomations(tenantId);
+    return { data: JSON.stringify(autos) };
+  }
+
+  @Post('autos/import')
+  @Roles(UserRole.SUPER_ADMIN)
+  async importAutomations(@Req() req: AuthenticatedRequest, @Body() body: { payload: string }) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    try {
+      const list = JSON.parse(body.payload);
+      for (const item of list) {
+        await this.communicationService.saveAutomation(tenantId, item);
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  // --- TEMPLATES ---
+
+  @Get('auto-templates')
+  async getAutomationTemplates(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.getAutomationTemplates(tenantId);
+  }
+
+  @Post('auto-templates')
+  @Roles(UserRole.SUPER_ADMIN)
+  async createAutomationTemplate(@Req() req: AuthenticatedRequest, @Body() body: any) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.createAutomationTemplate(tenantId, body);
+  }
+
+  @Patch('auto-templates/:id')
+  @Roles(UserRole.SUPER_ADMIN)
+  async updateAutomationTemplate(@Param('id') id: string, @Body() body: any) {
+    return this.communicationService.updateAutomationTemplate(id, body);
+  }
+
+  @Post('auto-templates/:id/versions/:versionId/restore')
+  @Roles(UserRole.SUPER_ADMIN)
+  async restoreTemplateVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
+    return this.communicationService.restoreTemplateVersion(id, versionId);
+  }
+
+  // --- LOGS & ANALYTICS ---
+
+  @Get('auto-logs')
+  async getAutomationLogs(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.getAutomationLogs(tenantId);
+  }
+
+  @Get('auto-analytics')
+  async getAutomationAnalytics(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.getAutomationAnalytics(tenantId);
   }
 }

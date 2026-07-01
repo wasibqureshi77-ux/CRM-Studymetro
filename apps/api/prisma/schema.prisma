@@ -123,6 +123,8 @@ model Tenant {
   whatsappInstances WhatsappInstance[]
   whatsappTemplates WhatsappTemplate[]
   whatsappAutomations WhatsappAutomation[]
+  communicationAutomations CommunicationAutomation[]
+  communicationAutomationTemplates   CommunicationAutomationTemplate[]
 }
 
 model Branch {
@@ -232,6 +234,7 @@ model Lead {
   studentSessions      StudentSession[]
   studentNotifications StudentNotification[]
   whatsappMessages     WhatsappMessage[]
+  communicationAutomationLogs CommunicationAutomationLog[]
 
 
   @@index([tenantId])
@@ -728,5 +731,77 @@ model WhatsappAutomation {
   updatedAt  DateTime         @updatedAt
 
   @@index([tenantId])
+}
+
+model CommunicationAutomation {
+  id             String    @id @default(uuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name           String
+  trigger        String    // e.g. LEAD_CREATED, LEAD_ASSIGNED, etc.
+  channels       String[]  // e.g. ["EMAIL", "WHATSAPP", "SMS"]
+  templateId     String
+  template       CommunicationAutomationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  conditions     Json?     // Rule Builder JSON: e.g. { country: "Germany", course: "Masters" }
+  delayType      String    // IMMEDIATE, DELAYED, RECURRING
+  delayDuration  String?   // e.g. "5m", "1h", "1d"
+  cronExpression String?   // For recurring crons
+  enabled        Boolean   @default(true)
+  maxRetries     Int       @default(3)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  logs           CommunicationAutomationLog[]
+
+  @@index([tenantId])
+}
+
+model CommunicationAutomationTemplate {
+  id             String    @id @default(uuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name           String
+  subject        String?
+  body           String    @db.Text
+  variables      String[]  // e.g. ["studentName", "course"]
+  version        Int       @default(1)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  versions       CommunicationAutomationTemplateVersion[]
+  automations    CommunicationAutomation[]
+
+  @@index([tenantId])
+}
+
+model CommunicationAutomationTemplateVersion {
+  id             String    @id @default(uuid())
+  templateId     String
+  template       CommunicationAutomationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  version        Int
+  subject        String?
+  body           String    @db.Text
+  createdAt      DateTime  @default(now())
+
+  @@index([templateId])
+}
+
+model CommunicationAutomationLog {
+  id             String    @id @default(uuid())
+  automationId   String
+  automation     CommunicationAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  leadId         String
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  channel        String    // EMAIL, WHATSAPP, etc.
+  status         String    // QUEUED, PROCESSING, SENT, FAILED, RETRYING
+  retryCount     Int       @default(0)
+  failedReason   String?   @db.Text
+  response       String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([automationId])
+  @@index([leadId])
 }
 

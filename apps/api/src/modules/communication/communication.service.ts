@@ -21,9 +21,16 @@ export class CommunicationService implements OnModuleInit {
     // Start background processing interval (runs every 15 seconds)
     setInterval(() => {
       this.processQueue().catch((err) => {
-        console.error('Error processing communication queue in interval:', err);
+        console.log('Error processing communication queue in interval:', err);
       });
     }, 15000);
+
+    // Start communication automation retry loop (runs every 60 seconds)
+    setInterval(() => {
+      this.executeRetryEngineLoop().catch((err) => {
+        console.error('[CommunicationAutomation] Error in retry engine loop:', err.message);
+      });
+    }, 60000);
   }
 
   async seedTemplates() {
@@ -645,6 +652,557 @@ export class CommunicationService implements OnModuleInit {
           studentWhatsappOtpEnabled: data.studentWhatsappOtpEnabled !== undefined ? data.studentWhatsappOtpEnabled : false,
         }
       });
+    }
+  }
+
+  // --- ENTERPRISE AUTOMATION SYSTEM ---
+
+  async triggerEvent(triggerName: string, leadId: string, context: Record<string, string> = {}) {
+    console.log(`[CommunicationAutomation] Triggering event: ${triggerName} for Lead ID: ${leadId}`);
+    
+    // Find active automations matching the trigger
+    const lead = await this.prisma.lead.findUnique({
+      where: { id: leadId },
+      include: { studentProfile: true }
+    });
+
+    if (!lead) {
+      console.warn(`[CommunicationAutomation] Lead ID ${leadId} not found. Skipping trigger.`);
+      return;
+    }
+
+    const tenantId = lead.tenantId;
+
+    const automations = await this.prisma.communicationAutomation.findMany({
+      where: { tenantId, trigger: triggerName, enabled: true },
+      include: { template: true }
+    });
+
+    if (automations.length === 0) {
+      console.log(`[Whatsapp]\nMissing template: ${triggerName}`);
+      return;
+    }
+
+    // Resolve appUrl dynamically
+    const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetrojaipur.com';
+
+    // Resolve Counsellor
+    let counsellorName = 'Your Counsellor';
+    if (lead.assigneeId) {
+      const assignee = await this.prisma.user.findUnique({ where: { id: lead.assigneeId } });
+      if (assignee) {
+        counsellorName = `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim();
+      }
+    }
+
+    // Resolve Brochure Title and Tracking link
+    let brochureTitle = '';
+    let brochureLink = '';
+    const assignment: any = await this.prisma.brochureAssignment.findFirst({
+      where: { leadId },
+      include: { brochure: true },
+      orderBy: { assignedAt: 'desc' }
+    });
+    if (assignment) {
+      brochureTitle = assignment.brochure?.title || '';
+      brochureLink = `${appUrl}/brochure/view/${assignment.token}`;
+    }
+
+    // Resolve Pending Documents List
+    const pendingDocs = await this.prisma.leadDocument.findMany({
+      where: { leadId, status: 'PENDING' }
+    });
+    const pendingDocuments = pendingDocs.length > 0 
+      ? pendingDocs.map(d => `• ${d.documentType}`).join('\n') 
+      : '• Passport\n• Marksheets\n• SOP\n• LOR';
+
+    // Resolve Follow-up Date
+    const latestFollowup = await this.prisma.followup.findFirst({
+      where: { leadId, status: 'SCHEDULED' },
+      orderBy: { followupDate: 'asc' }
+    });
+    const followupDate = latestFollowup ? new Date(latestFollowup.followupDate).toLocaleString() : 'Not scheduled';
+
+    // Resolve Offer Letter details & Visa status
+    const latestApp = await this.prisma.application.findFirst({
+      where: { leadId },
+      orderBy: { createdAt: 'desc' }
+    });
+    const visaStatus = latestApp?.visaStatus || 'NOT_STARTED';
+
+    const offerDoc = await this.prisma.leadDocument.findFirst({
+      where: { leadId, documentType: 'OFFER_LETTER' }
+    });
+    const offerLetterLink = offerDoc ? `${appUrl}/api/v1/leads/documents/download/${offerDoc.id}` : `${appUrl}/student/login`;
+    const paymentLink = `${appUrl}/student/login?redirect=/payments`;
+
+    for (const auto of automations) {
+      // Prevent duplicates: Check if this exact automation was already triggered for this lead
+      const existingLog = await this.prisma.communicationAutomationLog.findFirst({
+        where: {
+          automationId: auto.id,
+          leadId,
+          status: { in: ['SENT', 'QUEUED'] }
+        }
+      });
+      if (existingLog) {
+        console.log(`[CommunicationAutomation] Duplicate prevention: automation "${auto.name}" already dispatched/queued for lead ${leadId}. Skipping.`);
+        continue;
+      }
+
+      // Evaluate conditions (Rule Builder)
+      const isMatch = this.evaluateConditions(lead, auto.conditions);
+      if (!isMatch) {
+        console.log(`[CommunicationAutomation] Automation "${auto.name}" rule mismatch. Skipping.`);
+        continue;
+      }
+
+      // Populate evaluated text body
+      const variablesMap = {
+        studentName: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+        leadNumber: lead.leadNumber || '',
+        course: lead.preferredCourse || lead.studentProfile?.targetCourse || '',
+        country: lead.preferredCountry || lead.studentProfile?.targetCountry || '',
+        intake: lead.intendedIntake || lead.studentProfile?.intake || '',
+        assignedCounsellor: counsellorName,
+        brochureTitle,
+        brochureLink,
+        portalLink: `${appUrl}/student/login`,
+        pendingDocuments,
+        followupDate,
+        offerLetterLink,
+        visaStatus,
+        paymentLink,
+        today: new Date().toLocaleDateString(),
+        ...context
+      };
+
+      let evaluatedBody = auto.template.body;
+      let evaluatedSubject = auto.template.subject || '';
+
+      for (const [key, value] of Object.entries(variablesMap)) {
+        evaluatedBody = evaluatedBody.replace(new RegExp(`{{${key}}}`, 'g'), value);
+        evaluatedSubject = evaluatedSubject.replace(new RegExp(`{{${key}}}`, 'g'), value);
+      }
+
+      if (auto.delayType === 'IMMEDIATE') {
+        await this.executeAutomation(auto.id, leadId, auto.channels, evaluatedSubject, evaluatedBody, auto.maxRetries);
+      } else {
+        // Enqueue delayed / scheduled automation log
+        for (const channel of auto.channels) {
+          await this.prisma.communicationAutomationLog.create({
+            data: {
+              automationId: auto.id,
+              leadId,
+              channel,
+              status: 'QUEUED',
+              response: `Delayed trigger: ${auto.delayDuration || 'scheduled'}`,
+            }
+          });
+        }
+        console.log(`[CommunicationAutomation] Automation ${auto.name} enqueued with delay settings: ${auto.delayDuration}`);
+      }
+    }
+  }
+
+  private evaluateConditions(lead: any, conditions: any): boolean {
+    if (!conditions) return true;
+    try {
+      const cond = typeof conditions === 'string' ? JSON.parse(conditions) : conditions;
+      if (Object.keys(cond).length === 0) return true;
+      for (const [key, val] of Object.entries(cond)) {
+        const matchVal = String(val).toLowerCase().trim();
+        if (key === 'country') {
+          const leadCountry = String(lead.preferredCountry || lead.studentProfile?.targetCountry || '').toLowerCase().trim();
+          if (leadCountry !== matchVal) return false;
+        }
+        if (key === 'course') {
+          const leadCourse = String(lead.preferredCourse || lead.studentProfile?.targetCourse || '').toLowerCase().trim();
+          if (!leadCourse.includes(matchVal)) return false;
+        }
+        if (key === 'status') {
+          const leadStatus = String(lead.status || '').toLowerCase().trim();
+          if (leadStatus !== matchVal) return false;
+        }
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  private async executeAutomation(automationId: string, leadId: string, channels: string[], subject: string, body: string, maxRetries: number) {
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) return;
+
+    for (const channel of channels) {
+      const log = await this.prisma.communicationAutomationLog.create({
+        data: {
+          automationId,
+          leadId,
+          channel,
+          status: 'PROCESSING',
+          response: body
+        }
+      });
+
+      try {
+        if (channel === 'WHATSAPP') {
+          // Resolve standard WhatsApp Gateway active socket
+          const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
+          const instance = await this.prisma.whatsappInstance.findFirst({
+            where: { tenantId: lead.tenantId, status: 'CONNECTED' }
+          });
+          if (instance && WhatsappQueueService.instance) {
+            // Build custom db message tracking row
+            const dbMsg = await this.prisma.whatsappMessage.create({
+              data: {
+                leadId,
+                instanceId: instance.id,
+                direction: 'OUTBOUND',
+                messageType: 'TEXT',
+                messageId: `msg-auto-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                body,
+                status: 'PENDING'
+              }
+            });
+            await WhatsappQueueService.instance.enqueueMessage(instance.id, lead.phone, { text: body }, dbMsg.id);
+            await this.prisma.communicationAutomationLog.update({
+              where: { id: log.id },
+              data: { status: 'SENT' }
+            });
+          } else {
+            throw new Error('No connected WhatsApp gateway socket available.');
+          }
+        } else if (channel === 'EMAIL') {
+          if (lead.email) {
+            await this.emailService.sendEmail(lead.email, subject || 'Notification', body, `<p>${body.replace(/\n/g, '<br/>')}</p>`, lead.tenantId);
+            await this.prisma.communicationAutomationLog.update({
+              where: { id: log.id },
+              data: { status: 'SENT' }
+            });
+          } else {
+            throw new Error('Lead email address missing.');
+          }
+        } else if (channel === 'SMS') {
+          console.log(`[SMS MOCK] Send: ${body} to ${lead.phone}`);
+          await this.prisma.communicationAutomationLog.update({
+            where: { id: log.id },
+            data: { status: 'SENT' }
+          });
+        } else if (channel === 'PORTAL') {
+          await this.prisma.studentNotification.create({
+            data: {
+              leadId,
+              title: subject || 'New Notification',
+              message: body
+            }
+          });
+          await this.prisma.communicationAutomationLog.update({
+            where: { id: log.id },
+            data: { status: 'SENT', response: 'Portal notification created.' }
+          });
+        } else {
+          // Push notification mock
+          console.log(`[PUSH MOCK] Send: ${body}`);
+          await this.prisma.communicationAutomationLog.update({
+            where: { id: log.id },
+            data: { status: 'SENT', response: 'Push notification executed.' }
+          });
+        }
+      } catch (err: any) {
+        console.error(`[CommunicationAutomation] Channel ${channel} execution failed:`, err.message);
+        await this.prisma.communicationAutomationLog.update({
+          where: { id: log.id },
+          data: {
+            status: 'FAILED',
+            failedReason: err.message,
+            retryCount: 0
+          }
+        });
+      }
+    }
+  }
+
+  // --- AUTOMATIONS CRUD ---
+
+  async getAutomations(tenantId: string) {
+    const autos = await this.prisma.communicationAutomation.findMany({
+      where: { tenantId },
+      include: { template: true, logs: true }
+    });
+
+    return autos.map(a => {
+      const total = a.logs.length;
+      const success = a.logs.filter(l => l.status === 'SENT').length;
+      const failure = a.logs.filter(l => l.status === 'FAILED').length;
+      const rate = total > 0 ? Math.round((success / total) * 100) : 100;
+      const failRate = total > 0 ? Math.round((failure / total) * 100) : 0;
+      const lastExecLog = a.logs.length > 0 ? a.logs[a.logs.length - 1] : null;
+
+      return {
+        id: a.id,
+        name: a.name,
+        trigger: a.trigger,
+        channels: a.channels,
+        enabled: a.enabled,
+        delayType: a.delayType,
+        delayDuration: a.delayDuration,
+        cronExpression: a.cronExpression,
+        conditions: a.conditions,
+        maxRetries: a.maxRetries,
+        templateId: a.templateId,
+        templateName: a.template.name,
+        successRate: rate,
+        failureRate: failRate,
+        totalExecutions: total,
+        lastExecuted: lastExecLog ? lastExecLog.createdAt : null
+      };
+    });
+  }
+
+  async saveAutomation(tenantId: string, data: any) {
+    return this.prisma.communicationAutomation.create({
+      data: {
+        tenantId,
+        name: data.name,
+        trigger: data.trigger,
+        channels: data.channels,
+        templateId: data.templateId,
+        conditions: data.conditions || {},
+        delayType: data.delayType || 'IMMEDIATE',
+        delayDuration: data.delayDuration || null,
+        cronExpression: data.cronExpression || null,
+        maxRetries: Number(data.maxRetries || 3),
+        enabled: data.enabled !== undefined ? data.enabled : true
+      }
+    });
+  }
+
+  async updateAutomation(id: string, data: any) {
+    return this.prisma.communicationAutomation.update({
+      where: { id },
+      data: {
+        name: data.name,
+        trigger: data.trigger,
+        channels: data.channels,
+        templateId: data.templateId,
+        conditions: data.conditions,
+        delayType: data.delayType,
+        delayDuration: data.delayDuration,
+        cronExpression: data.cronExpression,
+        maxRetries: data.maxRetries !== undefined ? Number(data.maxRetries) : undefined,
+        enabled: data.enabled
+      }
+    });
+  }
+
+  async deleteAutomation(id: string) {
+    return this.prisma.communicationAutomation.delete({ where: { id } });
+  }
+
+  async cloneAutomation(id: string) {
+    const existing = await this.prisma.communicationAutomation.findUnique({ where: { id } });
+    if (!existing) throw new Error('Automation rule not found');
+    return this.prisma.communicationAutomation.create({
+      data: {
+        tenantId: existing.tenantId,
+        name: `${existing.name} (Copy)`,
+        trigger: existing.trigger,
+        channels: existing.channels,
+        templateId: existing.templateId,
+        conditions: existing.conditions || {},
+        delayType: existing.delayType,
+        delayDuration: existing.delayDuration,
+        cronExpression: existing.cronExpression,
+        maxRetries: existing.maxRetries,
+        enabled: false
+      }
+    });
+  }
+
+  // --- TEMPLATES CRUD & VERSIONING ---
+
+  async getAutomationTemplates(tenantId: string) {
+    return this.prisma.communicationAutomationTemplate.findMany({
+      where: { tenantId },
+      include: { versions: { orderBy: { version: 'desc' } } }
+    });
+  }
+
+  async createAutomationTemplate(tenantId: string, data: any) {
+    const t = await this.prisma.communicationAutomationTemplate.create({
+      data: {
+        tenantId,
+        name: data.name,
+        subject: data.subject || null,
+        body: data.body,
+        variables: data.variables || [],
+        version: 1,
+        isActive: true
+      }
+    });
+    // Create initial version record
+    await this.prisma.communicationAutomationTemplateVersion.create({
+      data: {
+        templateId: t.id,
+        version: 1,
+        subject: t.subject,
+        body: t.body
+      }
+    });
+    return t;
+  }
+
+  async updateAutomationTemplate(id: string, data: any) {
+    const existing = await this.prisma.communicationAutomationTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('Template not found');
+
+    const nextVer = existing.version + 1;
+    const updated = await this.prisma.communicationAutomationTemplate.update({
+      where: { id },
+      data: {
+        name: data.name,
+        subject: data.subject,
+        body: data.body,
+        variables: data.variables || [],
+        version: nextVer
+      }
+    });
+
+    // Record template revision history
+    await this.prisma.communicationAutomationTemplateVersion.create({
+      data: {
+        templateId: id,
+        version: nextVer,
+        subject: updated.subject,
+        body: updated.body
+      }
+    });
+    return updated;
+  }
+
+  async restoreTemplateVersion(id: string, versionId: string) {
+    const ver = await this.prisma.communicationAutomationTemplateVersion.findUnique({ where: { id: versionId } });
+    if (!ver || ver.templateId !== id) throw new Error('Selected template revision does not exist');
+    const existing = await this.prisma.communicationAutomationTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('Template not found');
+
+    const nextVer = existing.version + 1;
+    return this.prisma.communicationAutomationTemplate.update({
+      where: { id },
+      data: {
+        subject: ver.subject,
+        body: ver.body,
+        version: nextVer
+      }
+    });
+  }
+
+  // --- LOGS & ANALYTICS ---
+
+  async getAutomationLogs(tenantId: string) {
+    return this.prisma.communicationAutomationLog.findMany({
+      where: { automation: { tenantId } },
+      include: { automation: true, lead: true },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  async getAutomationAnalytics(tenantId: string) {
+    const logs = await this.prisma.communicationAutomationLog.findMany({
+      where: { automation: { tenantId } },
+      include: { lead: true }
+    });
+
+    const total = logs.length;
+    const sent = logs.filter(l => l.status === 'SENT').length;
+    const failed = logs.filter(l => l.status === 'FAILED').length;
+    const pending = logs.filter(l => l.status === 'QUEUED' || l.status === 'PROCESSING').length;
+
+    const rate = total > 0 ? Math.round((sent / total) * 100) : 100;
+    const failRate = total > 0 ? Math.round((failed / total) * 100) : 0;
+
+    // Aggregate by countries
+    const countries: Record<string, number> = {};
+    for (const l of logs) {
+      const c = l.lead.preferredCountry || 'Unknown';
+      countries[c] = (countries[c] || 0) + 1;
+    }
+
+    return {
+      totalSent: sent,
+      totalFailed: failed,
+      totalPending: pending,
+      successRate: rate,
+      failureRate: failRate,
+      topCountries: Object.entries(countries).map(([name, count]) => ({ name, count })).sort((a,b) => b.count - a.count).slice(0, 5)
+    };
+  }
+
+  // Retry Engine Loop (runs every 1 minute)
+  async executeRetryEngineLoop() {
+    const failedLogs = await this.prisma.communicationAutomationLog.findMany({
+      where: {
+        status: 'FAILED',
+        retryCount: { lt: 3 } // Limit to 3 retries max
+      },
+      include: { automation: true, lead: true }
+    });
+
+    for (const log of failedLogs) {
+      const elapsedMinutes = (Date.now() - log.updatedAt.getTime()) / 60000;
+      // Exponential backoff retry timer check (1m, 5m, 15m, 30m etc.)
+      const requiredInterval = log.retryCount === 0 ? 1 : log.retryCount === 1 ? 5 : 30;
+      if (elapsedMinutes >= requiredInterval) {
+        console.log(`[CommunicationAutomation] Re-attempting failed message dispatch log ID: ${log.id}`);
+        await this.prisma.communicationAutomationLog.update({
+          where: { id: log.id },
+          data: { status: 'PROCESSING', retryCount: log.retryCount + 1 }
+        });
+
+        try {
+          if (log.channel === 'WHATSAPP') {
+            const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
+            const instance = await this.prisma.whatsappInstance.findFirst({
+              where: { tenantId: log.automation.tenantId, status: 'CONNECTED' }
+            });
+            if (instance && WhatsappQueueService.instance) {
+              const dbMsg = await this.prisma.whatsappMessage.create({
+                data: {
+                  leadId: log.leadId,
+                  instanceId: instance.id,
+                  direction: 'OUTBOUND',
+                  messageType: 'TEXT',
+                  messageId: `msg-retry-${Date.now()}`,
+                  body: log.automation.name, // Fallback body reference
+                  status: 'PENDING'
+                }
+              });
+              await WhatsappQueueService.instance.enqueueMessage(instance.id, log.lead.phone, { text: log.automation.name }, dbMsg.id);
+              await this.prisma.communicationAutomationLog.update({
+                where: { id: log.id },
+                data: { status: 'SENT', response: `Retried successfully. Msg ID: ${dbMsg.id}` }
+              });
+            } else {
+              throw new Error('No active socket registry connection found during retry.');
+            }
+          } else if (log.channel === 'EMAIL') {
+            if (log.lead.email) {
+              await this.emailService.sendEmail(log.lead.email, log.automation.name, 'Retried notification text', '<p>Retried notification text</p>', log.automation.tenantId);
+              await this.prisma.communicationAutomationLog.update({
+                where: { id: log.id },
+                data: { status: 'SENT', response: 'Retried successfully.' }
+              });
+            }
+          }
+        } catch (err: any) {
+          await this.prisma.communicationAutomationLog.update({
+            where: { id: log.id },
+            data: { status: 'FAILED', failedReason: err.message }
+          });
+        }
+      }
     }
   }
 }

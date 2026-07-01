@@ -341,63 +341,11 @@ export class LeadService {
       brochureLinkToken = token;
     }
 
-    // Enqueue welcome_brochure communication
-    await this.communicationService.enqueue(
-      lead.id,
-      CommunicationChannel.EMAIL,
-      'WELCOME_BROCHURE',
-      { brochureLink: brochureLinkToken || '' },
-      'LeadService'
-    );
-
-    // Auto-trigger WhatsApp automation if any exists for LEAD_CREATED
+    // Auto-trigger Enterprise Communication Automation trigger
     try {
-      const automation = await this.prisma.whatsappAutomation.findFirst({
-        where: { tenantId, trigger: 'LEAD_CREATED', enabled: true },
-        include: { template: true },
-      });
-      if (automation && automation.template) {
-        const instance = await this.prisma.whatsappInstance.findFirst({
-          where: { tenantId, status: 'CONNECTED' },
-        });
-        if (instance) {
-          let body = automation.template.message;
-          const variablesMap = {
-            name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
-            leadNumber: lead.leadNumber || '',
-          };
-          for (const key of Object.keys(variablesMap)) {
-            body = body.replace(new RegExp(`{{${key}}}`, 'g'), variablesMap[key as keyof typeof variablesMap]);
-          }
-          const messageId = `msg-auto-${Date.now()}`;
-          const dbMsg = await this.prisma.whatsappMessage.create({
-            data: {
-              leadId: lead.id,
-              instanceId: instance.id,
-              direction: 'OUTBOUND',
-              messageType: 'TEXT',
-              messageId,
-              body,
-              status: 'PENDING',
-            },
-          });
-
-          // Dispatch job using standard WhatsappQueueService singleton instance to support Redis offline fallback
-          const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
-          if (WhatsappQueueService.instance) {
-            await WhatsappQueueService.instance.enqueueMessage(instance.id, lead.phone, { text: body }, dbMsg.id);
-            console.log(`[Whatsapp] Auto Lead Message Enqueued successfully for Msg ID: ${dbMsg.id}`);
-          } else {
-            console.error('[Whatsapp] Queue Service instance not registered. Cannot enqueue auto message.');
-          }
-        } else {
-          console.warn(`[Whatsapp] No active connected instance found under tenant ${tenantId} for auto dispatch.`);
-        }
-      } else {
-        console.log(`[Whatsapp] No active automation template found for LEAD_CREATED trigger under tenant ${tenantId}.`);
-      }
-    } catch (err) {
-      console.error('Failed to trigger WhatsApp Lead Created automation:', err);
+      await this.communicationService.triggerEvent('LEAD_CREATED', lead.id);
+    } catch (err: any) {
+      console.error('[CommunicationAutomation] Trigger error for LEAD_CREATED:', err.message);
     }
 
     return lead;
@@ -609,13 +557,16 @@ export class LeadService {
         }
       });
 
-      if (dto.status === 'DOCUMENTS_PENDING') {
-        const pendingDocs = await this.prisma.leadDocument.findMany({
-          where: { leadId: id, status: 'PENDING', isCurrent: true }
-        });
-        const docTypeList = pendingDocs.map(d => d.documentType).join(', ') || 'Passport, Marksheets, SOP, LOR';
-        await this.communicationService.enqueue(id, CommunicationChannel.EMAIL, 'DOCUMENT_REQUEST', { documentList: docTypeList }, 'LeadService');
-        await this.communicationService.enqueue(id, CommunicationChannel.WHATSAPP, 'DOCUMENT_REQUEST', { documentList: docTypeList }, 'LeadService');
+      // Trigger event-driven communication automation trigger matching this status transition
+      let triggerName: string = dto.status;
+      if (dto.status === 'DOCUMENTS_PENDING') triggerName = 'DOCUMENT_PENDING';
+      if (dto.status === 'OFFER_LETTER') triggerName = 'OFFER_RECEIVED';
+      if (dto.status === 'ADMISSION_CLOSED') triggerName = 'VISA_APPROVED';
+
+      try {
+        await this.communicationService.triggerEvent(triggerName, id);
+      } catch (err: any) {
+        console.error(`[CommunicationAutomation] Trigger error for status ${triggerName}:`, err.message);
       }
 
       // Synchronize latest university application status for Study Abroad category leads

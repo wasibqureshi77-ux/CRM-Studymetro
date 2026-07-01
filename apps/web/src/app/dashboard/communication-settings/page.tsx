@@ -44,6 +44,19 @@ export default function CommunicationSettingsPage() {
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
   const [testRecipient, setTestRecipient] = useState('');
 
+  // Enterprise Automation states
+  const [activeTab, setActiveTab] = useState<'general' | 'automations'>('general');
+  const [automations, setAutomations] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [showAutoModal, setShowAutoModal] = useState(false);
+  const [editingAuto, setEditingAuto] = useState<any>(null);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<any>(null);
+  const [importPayload, setImportPayload] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
+
   const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
 
   const addToast = (type: 'success' | 'error', message: string) => {
@@ -97,8 +110,27 @@ export default function CommunicationSettingsPage() {
     }
   };
 
+  const fetchAutomationData = async () => {
+    try {
+      const autosRes = await api.get('/api/v1/communication/autos');
+      if (autosRes) setAutomations(autosRes);
+
+      const tempsRes = await api.get('/api/v1/communication/auto-templates');
+      if (tempsRes) setTemplates(tempsRes);
+
+      const logsRes = await api.get('/api/v1/communication/auto-logs');
+      if (logsRes) setLogs(logsRes);
+
+      const analyticsRes = await api.get('/api/v1/communication/auto-analytics');
+      if (analyticsRes) setAnalytics(analyticsRes);
+    } catch (err: any) {
+      console.error('Failed to load automation data', err);
+    }
+  };
+
   useEffect(() => {
     fetchSettings();
+    fetchAutomationData();
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -201,7 +233,7 @@ export default function CommunicationSettingsPage() {
   }
 
   return (
-    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '750px' }}>
+    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '850px' }}>
       <div>
         <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Communication Hub Settings</h1>
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
@@ -209,8 +241,43 @@ export default function CommunicationSettingsPage() {
         </p>
       </div>
 
-      {/* Communication Channel Status Widgets */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+      <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('general')}
+          style={{
+            padding: '8px 16px',
+            background: activeTab === 'general' ? '#3b82f6' : 'none',
+            color: activeTab === 'general' ? '#fff' : 'var(--text-color)',
+            border: activeTab === 'general' ? 'none' : '1px solid var(--border-color)',
+            borderRadius: '4px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          General Settings
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('automations')}
+          style={{
+            padding: '8px 16px',
+            background: activeTab === 'automations' ? '#3b82f6' : 'none',
+            color: activeTab === 'automations' ? '#fff' : 'var(--text-color)',
+            border: activeTab === 'automations' ? 'none' : '1px solid var(--border-color)',
+            borderRadius: '4px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          ⚙️ Automations Dashboard
+        </button>
+      </div>
+
+      {activeTab === 'general' ? (
+        <>
+          {/* Communication Channel Status Widgets */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
         <div style={{
           backgroundColor: '#fff',
           border: '1px solid var(--border-color)',
@@ -588,6 +655,20 @@ export default function CommunicationSettingsPage() {
         </div>
       )}
 
+        </>
+      ) : null}
+
+      {activeTab === 'automations' && (
+        <AutomationHubSection
+          automations={automations}
+          templates={templates}
+          logs={logs}
+          analytics={analytics}
+          fetchData={fetchAutomationData}
+          addToast={addToast}
+        />
+      )}
+
       {/* Toast Alert panel */}
       <div style={{ position: 'fixed', bottom: '20px', right: '20px', display: 'flex', flexDirection: 'column', gap: '10px', zIndex: 9999 }}>
         {toasts.map((t) => (
@@ -735,10 +816,31 @@ function WhatsappIntegrationSection({ addToast }: { addToast: (type: 'success' |
     }
   };
 
+  const handleSeedDefaults = async () => {
+    try {
+      console.log('Requesting default template seed...');
+      await api.post('/api/v1/whatsapp/seed-defaults');
+      addToast('success', 'Default templates & automations seeded successfully!');
+    } catch (err: any) {
+      console.error('Seed error:', err);
+      addToast('error', err.message || 'Failed to seed templates');
+    }
+  };
+
   if (loading) return <div style={{ fontSize: '12px' }}>Loading WhatsApp instances...</div>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Missing Automations warning and seed buttons */}
+      <div style={{ padding: '12px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '6px', fontSize: '12px', color: '#b45309' }}>
+        <strong>⚠️ Missing Automations Warning:</strong> If default templates or triggers (LEAD_CREATED, DOCUMENT_PENDING, FOLLOWUP_REMINDER) are missing, automations will fail.
+        <div style={{ marginTop: '8px' }}>
+          <button type="button" className="btn btn-xs" style={{ backgroundColor: '#d97706', color: '#fff' }} onClick={handleSeedDefaults}>
+            ⚡ Create Default Templates & Automations
+          </button>
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: '8px' }}>
         <input
           type="text"
@@ -886,6 +988,485 @@ function QRCodeRenderer({ text }: { text: string }) {
       >
         📥 Download QR
       </button>
+    </div>
+  );
+}
+
+function AutomationHubSection({ automations, templates, logs, analytics, fetchData, addToast }: any) {
+  const [subTab, setSubTab] = useState<'rules' | 'templates' | 'logs'>('rules');
+
+  // Automation Form State
+  const [showAutoModal, setShowAutoModal] = useState(false);
+  const [editingAuto, setEditingAuto] = useState<any>(null);
+  const [autoName, setAutoName] = useState('');
+  const [autoTrigger, setAutoTrigger] = useState('LEAD_CREATED');
+  const [autoChannels, setAutoChannels] = useState<string[]>(['WHATSAPP']);
+  const [autoTemplateId, setAutoTemplateId] = useState('');
+  const [autoDelayType, setAutoDelayType] = useState('IMMEDIATE');
+  const [autoDelayDuration, setAutoDelayDuration] = useState('');
+  const [autoCron, setAutoCron] = useState('');
+  const [autoMaxRetries, setAutoMaxRetries] = useState(3);
+  const [autoEnabled, setAutoEnabled] = useState(true);
+  const [autoCountryCondition, setAutoCountryCondition] = useState('');
+  const [autoStatusCondition, setAutoStatusCondition] = useState('');
+
+  // Template Form State
+  const [showTempModal, setShowTempModal] = useState(false);
+  const [editingTemp, setEditingTemp] = useState<any>(null);
+  const [tempName, setTempName] = useState('');
+  const [tempSubject, setTempSubject] = useState('');
+  const [tempBody, setTempBody] = useState('');
+  const [tempVariables, setTempVariables] = useState<string[]>(['studentName']);
+  const [showImportText, setShowImportText] = useState(false);
+  const [importJson, setImportJson] = useState('');
+
+  const triggerOptions = [
+    'LEAD_CREATED', 'LEAD_UPDATED', 'LEAD_ASSIGNED', 'COUNSELLING_SCHEDULED',
+    'FOLLOWUP_REMINDER', 'DOCUMENT_PENDING', 'DOCUMENTS_REJECTED', 'DOCUMENTS_APPROVED',
+    'OFFER_LETTER_RECEIVED', 'COE_RECEIVED', 'TUITION_FEE_REMINDER', 'VISA_FILED',
+    'VISA_APPROVED', 'VISA_REJECTED', 'STUDENT_PORTAL_ACTIVATED', 'BROCHURE_SHARED',
+    'PAYMENT_REMINDER', 'BIRTHDAY_WISHES', 'CUSTOM_AUTOMATION'
+  ];
+
+  const handleEditAuto = (auto: any) => {
+    setEditingAuto(auto);
+    setAutoName(auto.name);
+    setAutoTrigger(auto.trigger);
+    setAutoChannels(auto.channels || []);
+    setAutoTemplateId(auto.templateId);
+    setAutoDelayType(auto.delayType || 'IMMEDIATE');
+    setAutoDelayDuration(auto.delayDuration || '');
+    setAutoCron(auto.cronExpression || '');
+    setAutoMaxRetries(auto.maxRetries || 3);
+    setAutoEnabled(auto.enabled);
+    
+    const cond = auto.conditions || {};
+    setAutoCountryCondition(cond.country || '');
+    setAutoStatusCondition(cond.status || '');
+    setShowAutoModal(true);
+  };
+
+  const handleSaveAuto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      name: autoName,
+      trigger: autoTrigger,
+      channels: autoChannels,
+      templateId: autoTemplateId,
+      delayType: autoDelayType,
+      delayDuration: autoDelayDuration || null,
+      cronExpression: autoCron || null,
+      maxRetries: Number(autoMaxRetries),
+      enabled: autoEnabled,
+      conditions: {
+        ...(autoCountryCondition ? { country: autoCountryCondition } : {}),
+        ...(autoStatusCondition ? { status: autoStatusCondition } : {})
+      }
+    };
+
+    try {
+      if (editingAuto) {
+        await api.patch(`/api/v1/communication/autos/${editingAuto.id}`, payload);
+        addToast('success', 'Automation rule updated successfully!');
+      } else {
+        await api.post('/api/v1/communication/autos', payload);
+        addToast('success', 'Automation rule created successfully!');
+      }
+      setShowAutoModal(false);
+      fetchData();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to save automation rule');
+    }
+  };
+
+  const handleDeleteAuto = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this rule?')) return;
+    try {
+      await api.delete(`/api/v1/communication/autos/${id}`);
+      addToast('success', 'Automation rule deleted successfully!');
+      fetchData();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to delete automation rule');
+    }
+  };
+
+  const handleCloneAuto = async (id: string) => {
+    try {
+      await api.post(`/api/v1/communication/autos/${id}/clone`);
+      addToast('success', 'Automation rule cloned successfully!');
+      fetchData();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to clone automation rule');
+    }
+  };
+
+  const handleExportAutos = async () => {
+    try {
+      const res = await api.post('/api/v1/communication/autos/export');
+      navigator.clipboard.writeText(res.data);
+      addToast('success', 'Automation configurations exported to clipboard!');
+    } catch (err: any) {
+      addToast('error', 'Export failed');
+    }
+  };
+
+  const handleImportAutos = async () => {
+    try {
+      await api.post('/api/v1/communication/autos/import', { payload: importJson });
+      addToast('success', 'Automation configurations imported successfully!');
+      setShowImportText(false);
+      fetchData();
+    } catch (err: any) {
+      addToast('error', 'Import failed: verify JSON format');
+    }
+  };
+
+  // Template Handlers
+  const handleEditTemp = (temp: any) => {
+    setEditingTemp(temp);
+    setTempName(temp.name);
+    setTempSubject(temp.subject || '');
+    setTempBody(temp.body);
+    setTempVariables(temp.variables || []);
+    setShowTempModal(true);
+  };
+
+  const handleSaveTemp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      name: tempName,
+      subject: tempSubject,
+      body: tempBody,
+      variables: tempVariables
+    };
+
+    try {
+      if (editingTemp) {
+        await api.patch(`/api/v1/communication/auto-templates/${editingTemp.id}`, payload);
+        addToast('success', 'Template revision successfully created!');
+      } else {
+        await api.post('/api/v1/communication/auto-templates', payload);
+        addToast('success', 'Template successfully created!');
+      }
+      setShowTempModal(false);
+      fetchData();
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to save template');
+    }
+  };
+
+  const handleRestoreVersion = async (templateId: string, versionId: string) => {
+    try {
+      await api.post(`/api/v1/communication/auto-templates/${templateId}/versions/${versionId}/restore`);
+      addToast('success', 'Selected version revision restored successfully!');
+      setShowTempModal(false);
+      fetchData();
+    } catch (err: any) {
+      addToast('error', 'Restore failed');
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      
+      {/* Analytics Dashboard */}
+      {analytics && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+          <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>TOTAL SENT</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px' }}>{analytics.totalSent}</div>
+          </div>
+          <div style={{ background: '#fffbeb', padding: '12px', borderRadius: '6px', border: '1px solid #fef3c7' }}>
+            <div style={{ fontSize: '11px', color: '#b45309', fontWeight: 600 }}>PENDING / RETRYING</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px' }}>{analytics.totalPending}</div>
+          </div>
+          <div style={{ background: '#fef2f2', padding: '12px', borderRadius: '6px', border: '1px solid #fee2e2' }}>
+            <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 600 }}>TOTAL FAILED</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px' }}>{analytics.totalFailed}</div>
+          </div>
+          <div style={{ background: '#f0fdf4', padding: '12px', borderRadius: '6px', border: '1px solid #dcfce7' }}>
+            <div style={{ fontSize: '11px', color: '#166534', fontWeight: 600 }}>SUCCESS RATE</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: '#15803d' }}>{analytics.successRate}%</div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub Tabs control */}
+      <div style={{ display: 'flex', gap: '12px', background: '#f1f5f9', padding: '4px', borderRadius: '6px' }}>
+        {(['rules', 'templates', 'logs'] as const).map(tab => (
+          <button
+            key={tab}
+            type="button"
+            style={{
+              flex: 1,
+              padding: '6px 12px',
+              background: subTab === tab ? '#fff' : 'none',
+              border: 'none',
+              borderRadius: '4px',
+              fontSize: '12px',
+              fontWeight: 600,
+              boxShadow: subTab === tab ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              cursor: 'pointer'
+            }}
+            onClick={() => setSubTab(tab)}
+          >
+            {tab.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'rules' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>Active Automation Rules</h3>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button type="button" className="btn btn-xs btn-outline" onClick={handleExportAutos}>📤 Export Config</button>
+              <button type="button" className="btn btn-xs btn-outline" onClick={() => setShowImportText(!showImportText)}>📥 Import Config</button>
+              <button type="button" className="btn btn-xs btn-primary" onClick={() => { setEditingAuto(null); setAutoName(''); setAutoTemplateId(''); setShowAutoModal(true); }}>➕ Add Custom Trigger</button>
+            </div>
+          </div>
+
+          {showImportText && (
+            <div style={{ padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px' }}>
+              <textarea placeholder="Paste exported JSON array here" className="form-control" rows={3} value={importJson} onChange={e => setImportJson(e.target.value)} />
+              <button type="button" className="btn btn-xs btn-primary" style={{ marginTop: '8px' }} onClick={handleImportAutos}>Validate & Save Import</button>
+            </div>
+          )}
+
+          {/* Cards list */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {automations.map((a: any) => (
+              <div key={a.id} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', transition: 'border-color 0.2s' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <h4 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>{a.name}</h4>
+                    <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', display: 'block', marginTop: '2px' }}>{a.trigger}</span>
+                  </div>
+                  <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '9px', fontWeight: 700, background: a.enabled ? '#dcfce7' : '#f1f5f9', color: a.enabled ? '#15803d' : '#475569' }}>
+                    {a.enabled ? 'ACTIVE' : 'DISABLED'}
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px', color: '#475569' }}>
+                  <div><strong>Channels:</strong> {a.channels.join(', ')}</div>
+                  <div><strong>Template:</strong> {a.templateName}</div>
+                  <div><strong>Delay settings:</strong> {a.delayType} {a.delayDuration ? `(${a.delayDuration})` : ''}</div>
+                  {a.conditions && Object.keys(a.conditions).length > 0 && (
+                    <div><strong>Filters:</strong> {JSON.stringify(a.conditions)}</div>
+                  )}
+                  <div><strong>Executions:</strong> {a.totalExecutions} total • {a.successRate}% Success</div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '4px' }}>
+                  <button type="button" className="btn btn-xs" onClick={() => handleEditAuto(a)}>✏️ Edit Rule</button>
+                  <button type="button" className="btn btn-xs btn-outline" onClick={() => handleCloneAuto(a.id)}>📋 Clone</button>
+                  <button type="button" className="btn btn-xs btn-outline btn-danger" onClick={() => handleDeleteAuto(a.id)}>🗑️ Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {subTab === 'templates' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>Automation Templates</h3>
+            <button type="button" className="btn btn-xs btn-primary" onClick={() => { setEditingTemp(null); setTempName(''); setTempSubject(''); setTempBody(''); setShowTempModal(true); }}>➕ Create Template</button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
+            {templates.map((t: any) => (
+              <div key={t.id} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div>
+                    <strong style={{ fontSize: '13px' }}>{t.name}</strong>
+                    <span style={{ fontSize: '10px', color: '#64748b', marginLeft: '8px' }}>v{t.version}</span>
+                  </div>
+                  <button type="button" className="btn btn-xs" onClick={() => handleEditTemp(t)}>✏️ Edit Body & History</button>
+                </div>
+                <div style={{ fontSize: '12px', background: '#f8fafc', padding: '8px', borderRadius: '6px', marginTop: '8px', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                  {t.body}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {subTab === 'logs' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>Realtime Execution Log Trace</h3>
+          <div style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden' }}>
+            <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                  <th style={{ padding: '8px' }}>TIMESTAMP</th>
+                  <th style={{ padding: '8px' }}>TRIGGER</th>
+                  <th style={{ padding: '8px' }}>LEAD</th>
+                  <th style={{ padding: '8px' }}>CHANNEL</th>
+                  <th style={{ padding: '8px' }}>STATUS</th>
+                  <th style={{ padding: '8px' }}>RESPONSE / RETRIES</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((l: any) => (
+                  <tr key={l.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '8px' }}>{new Date(l.createdAt).toLocaleString()}</td>
+                    <td style={{ padding: '8px' }}>{l.automation?.name}</td>
+                    <td style={{ padding: '8px' }}>{l.lead?.firstName} {l.lead?.lastName}</td>
+                    <td style={{ padding: '8px' }}>{l.channel}</td>
+                    <td style={{ padding: '8px' }}>
+                      <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 700, background: l.status === 'SENT' ? '#dcfce7' : l.status === 'FAILED' ? '#fef2f2' : '#fffbeb', color: l.status === 'SENT' ? '#15803d' : l.status === 'FAILED' ? '#991b1b' : '#b45309' }}>
+                        {l.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '8px' }}>{l.response || l.failedReason} {l.retryCount > 0 && `(Retry: ${l.retryCount})`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Auto Modal Form */}
+      {showAutoModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '8px', width: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 16px 0' }}>Configure Automation Rule</h3>
+            <form onSubmit={handleSaveAuto} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-group">
+                <label>Rule name</label>
+                <input type="text" className="form-control" value={autoName} onChange={e => setAutoName(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label>Event trigger</label>
+                <select className="form-control" value={autoTrigger} onChange={e => setAutoTrigger(e.target.value)}>
+                  {triggerOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Dispatch Channels</label>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '4px' }}>
+                  {['WHATSAPP', 'EMAIL', 'SMS', 'PORTAL', 'PUSH'].map(c => (
+                    <label key={c} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={autoChannels.includes(c)}
+                        onChange={e => {
+                          if (e.target.checked) setAutoChannels([...autoChannels, c]);
+                          else setAutoChannels(autoChannels.filter(x => x !== c));
+                        }}
+                      />
+                      {c}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Dynamic template</label>
+                <select className="form-control" value={autoTemplateId} onChange={e => setAutoTemplateId(e.target.value)} required>
+                  <option value="">-- Select Template --</option>
+                  {templates.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+
+              {/* Conditions Rule Builder */}
+              <div style={{ border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', marginTop: '4px' }}>
+                <strong style={{ fontSize: '11px', display: 'block', marginBottom: '8px' }}>Rule Filters (Rule Builder)</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={{ fontSize: '10px' }}>Country Filter</label>
+                    <input type="text" className="form-control" placeholder="e.g. Germany" value={autoCountryCondition} onChange={e => setAutoCountryCondition(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '10px' }}>Status Filter</label>
+                    <input type="text" className="form-control" placeholder="e.g. NEW_LEAD" value={autoStatusCondition} onChange={e => setAutoStatusCondition(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Delay and Cron */}
+              <div className="form-group">
+                <label>Delay settings</label>
+                <select className="form-control" value={autoDelayType} onChange={e => setAutoDelayType(e.target.value)}>
+                  <option value="IMMEDIATE">Dispatch Immediately</option>
+                  <option value="DELAYED">Custom Delay Duration</option>
+                  <option value="RECURRING">Recurring Cron Schedule</option>
+                </select>
+              </div>
+              {autoDelayType === 'DELAYED' && (
+                <div className="form-group">
+                  <label>Delay duration (e.g. 5m, 1h, 1d)</label>
+                  <input type="text" className="form-control" value={autoDelayDuration} onChange={e => setAutoDelayDuration(e.target.value)} placeholder="5m" />
+                </div>
+              )}
+              {autoDelayType === 'RECURRING' && (
+                <div className="form-group">
+                  <label>Cron expression</label>
+                  <input type="text" className="form-control" value={autoCron} onChange={e => setAutoCron(e.target.value)} placeholder="*/5 * * * *" />
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
+                <button type="button" className="btn" onClick={() => setShowAutoModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Automation Rule</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Temp Modal Form */}
+      {showTempModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '8px', width: '550px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 16px 0' }}>Template Editor & History</h3>
+            <form onSubmit={handleSaveTemp} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-group">
+                <label>Template name</label>
+                <input type="text" className="form-control" value={tempName} onChange={e => setTempName(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label>Default Email Subject (optional)</label>
+                <input type="text" className="form-control" value={tempSubject} onChange={e => setTempSubject(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Content body (supports {"{{studentName}}, {{course}}, {{brochureLink}}"} placeholders)</label>
+                <textarea className="form-control" rows={5} value={tempBody} onChange={e => setTempBody(e.target.value)} required />
+              </div>
+
+              {/* Dynamic preview block */}
+              <div style={{ border: '1px dashed #cbd5e1', padding: '8px', borderRadius: '6px', background: '#f8fafc' }}>
+                <strong style={{ fontSize: '11px', display: 'block', marginBottom: '4px' }}>Live Variable Preview:</strong>
+                <div style={{ fontSize: '11px', color: '#475569' }}>
+                  {tempBody.replace(/{{studentName}}/g, 'John Doe').replace(/{{course}}/g, 'Masters in AI').replace(/{{brochureLink}}/g, 'https://link.com')}
+                </div>
+              </div>
+
+              {editingTemp?.versions && (
+                <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '8px' }}>
+                  <strong style={{ fontSize: '11px', display: 'block', marginBottom: '6px' }}>Template Revision History:</strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '100px', overflowY: 'auto' }}>
+                    {editingTemp.versions.map((v: any) => (
+                      <div key={v.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', background: '#f1f5f9', padding: '4px 8px', borderRadius: '4px' }}>
+                        <span>Ver {v.version} • {new Date(v.createdAt).toLocaleDateString()}</span>
+                        <button type="button" className="btn btn-xs" onClick={() => handleRestoreVersion(editingTemp.id, v.id)}>Restore This version</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
+                <button type="button" className="btn" onClick={() => setShowTempModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Template Version</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
