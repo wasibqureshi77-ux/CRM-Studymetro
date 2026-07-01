@@ -18,16 +18,35 @@ export class WhatsappService {
   }
 
   async connect(tenantId: string, instanceName: string) {
-    console.log("Creating WhatsApp instance");
+    let finalName = (instanceName || '').trim();
+    if (!finalName) {
+      const count = await this.prisma.whatsappInstance.count({
+        where: { tenantId }
+      });
+      finalName = `WhatsApp Instance ${count + 1}`;
+      let exists = await this.prisma.whatsappInstance.findFirst({
+        where: { tenantId, instanceName: finalName }
+      });
+      let index = count + 1;
+      while (exists) {
+        index++;
+        finalName = `WhatsApp Instance ${index}`;
+        exists = await this.prisma.whatsappInstance.findFirst({
+          where: { tenantId, instanceName: finalName }
+        });
+      }
+    }
+
+    console.log(`Creating WhatsApp instance with name: ${finalName}`);
     let instance = await this.prisma.whatsappInstance.findFirst({
-      where: { tenantId, instanceName },
+      where: { tenantId, instanceName: finalName },
     });
 
     if (!instance) {
       instance = await this.prisma.whatsappInstance.create({
         data: {
           tenantId,
-          instanceName,
+          instanceName: finalName,
           status: 'DISCONNECTED',
         },
       });
@@ -144,13 +163,13 @@ export class WhatsappService {
 
   // Automations trigger engine
   async triggerAutomation(tenantId: string, leadId: string, eventTrigger: string, context: Record<string, string>) {
-    const auto = await this.prisma.whatsappAutomation.findFirst({
-      where: { tenantId, trigger: eventTrigger, enabled: true },
-      include: { template: true },
+    const auto = await this.prisma.automationRule.findFirst({
+      where: { tenantId, trigger: eventTrigger, channel: 'WHATSAPP', enabled: true },
+      include: { whatsappTemplate: true },
     });
 
-    if (auto) {
-      await this.sendTemplateMessage(tenantId, leadId, auto.templateId, context);
+    if (auto && auto.whatsappTemplateId) {
+      await this.sendTemplateMessage(tenantId, leadId, auto.whatsappTemplateId, context);
     }
   }
 }

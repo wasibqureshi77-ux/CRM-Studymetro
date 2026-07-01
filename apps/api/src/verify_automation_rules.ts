@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { LeadService } from './modules/lead/lead.service';
 import { CommunicationService } from './modules/communication/communication.service';
+import { TrackerService } from './modules/tracker/tracker.service';
 import { PrismaService } from './prisma/prisma.service';
 import { CommunicationChannel, QueueStatus } from '@prisma/client';
 
@@ -10,6 +11,7 @@ async function runAudit() {
   const app = await NestFactory.createApplicationContext(AppModule);
   const leadService = app.get(LeadService);
   const commService = app.get(CommunicationService);
+  const trackerService = app.get(TrackerService);
   const prisma = app.get(PrismaService);
 
   const tenantId = 'studymetro-global';
@@ -187,6 +189,63 @@ async function runAudit() {
       throw new Error('❌ Verification FAILED: Duplicate notification sent for same-status transition on same lead!');
     }
     console.log('✓ TEST 4 PASSED: Duplicate notifications blocked on same lead transition.');
+
+    console.log('Waiting 10 seconds for Baileys socket disconnect/reconnect cycles to fully settle...');
+    await new Promise(r => setTimeout(r, 10000));
+
+    // TEST 5: Auto-captured visitor form tracking lead ingestion triggers Email + WhatsApp welcome event
+    console.log('\nTEST 5: Waiting dynamically for active WhatsApp instance to become CONNECTED...');
+    let connected = false;
+    for (let i = 0; i < 60; i++) {
+      const inst = await prisma.whatsappInstance.findFirst({
+        where: { tenantId, status: 'CONNECTED' }
+      });
+      if (inst) {
+        connected = true;
+        console.log(`- WhatsApp Instance "${inst.instanceName}" is CONNECTED!`);
+        break;
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    if (!connected) {
+      console.warn('⚠️ Warning: WhatsApp instance did not connect in time. Continuing test...');
+    }
+
+    console.log('Submitting form visitor tracking lead auto-capture...');
+    const visitorId = `visitor-test-${Date.now()}`;
+    const sessionId = `session-test-${Date.now()}`;
+    const trackResult = await trackerService.trackForm({
+      visitorId,
+      sessionId,
+      formFields: {
+        name: 'Alice Ingest',
+        email: 'alice-ingest@studymetrojaipur.com',
+        phone: '919998887771',
+        leadCategory: 'Study Abroad'
+      },
+      url: 'http://localhost:5000'
+    }, tenantId);
+
+    const trackerLead = trackResult.lead;
+    console.log(`- Generated Lead ID: ${trackerLead.id}`);
+
+    const trackerLogs = await prisma.communicationLog.findMany({
+      where: { leadId: trackerLead.id }
+    });
+    console.log(`- Found ${trackerLogs.length} triggered logs for auto-captured tracker lead:`);
+    for (const log of trackerLogs) {
+      console.log(`  - Channel: ${log.channel}, Status: ${log.status}`);
+      if (log.message.includes('{{studentName}}') || log.message.includes('{{brochureLink}}')) {
+        throw new Error('❌ Verification FAILED: Unreplaced placeholders found in tracker welcome body!');
+      }
+      if (!log.message.includes('Alice Ingest')) {
+        throw new Error('❌ Verification FAILED: studentName was not replaced correctly in tracker welcome body!');
+      }
+    }
+    if (trackerLogs.length < 2) {
+      throw new Error('❌ Verification FAILED: Auto-captured lead failed to trigger both Email + WhatsApp welcome messages!');
+    }
+    console.log('✓ TEST 5 PASSED: Auto-captured lead triggered unified Email and WhatsApp welcome events correctly.');
 
   } catch (error: any) {
     console.error('❌ Audit Failed with error:', error.message);

@@ -88,6 +88,7 @@ export default function LeadDetailPage() {
   const [whatsappText, setWhatsappText] = useState('');
   const [whatsappMedia, setWhatsappMedia] = useState('');
   const [whatsappHistory, setWhatsappHistory] = useState<any[]>([]);
+  const [whatsappTemplates, setWhatsappTemplates] = useState<any[]>([]);
 
   // Followup State
   const [followupDate, setFollowupDate] = useState('');
@@ -233,10 +234,14 @@ export default function LeadDetailPage() {
   const handleWhatsappTabClick = async () => {
     setActiveTab('whatsapp');
     try {
-      const res = await api.get(`/api/v1/whatsapp/history/${id}`);
-      setWhatsappHistory(res || []);
+      const [hist, tmpls] = await Promise.all([
+        api.get(`/api/v1/whatsapp/history/${id}`),
+        api.get('/api/v1/communication/templates/whatsapp')
+      ]);
+      setWhatsappHistory(hist || []);
+      setWhatsappTemplates((tmpls || []).filter((t: any) => t.isActive));
     } catch (err) {
-      console.error('Failed to fetch WhatsApp history', err);
+      console.error('Failed to fetch WhatsApp history and templates', err);
     }
   };
 
@@ -1488,6 +1493,50 @@ export default function LeadDetailPage() {
                     );
                   })
                 )}
+              </div>
+
+              {/* Send Template Form */}
+              <div style={{ padding: '12px', background: 'var(--surface-variant, #f8f9fa)', borderRadius: '6px', marginBottom: '16px', border: '1px solid var(--border-color, #e4e6ef)' }}>
+                <label style={{ fontWeight: 600, fontSize: '13px', display: 'block', marginBottom: '8px' }}>Send WhatsApp Template</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select 
+                    className="form-control" 
+                    id="whatsappTemplateSelect"
+                    style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }}
+                  >
+                    {whatsappTemplates.length === 0 ? (
+                      <option value="">No Active Templates Available</option>
+                    ) : (
+                      whatsappTemplates.map((t: any) => (
+                        <option key={t.id} value={t.name}>{t.name}</option>
+                      ))
+                    )}
+                  </select>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    style={{ padding: '6px 12px', fontSize: '13px' }}
+                    onClick={async () => {
+                      const select = document.getElementById('whatsappTemplateSelect') as HTMLSelectElement;
+                      const val = select?.value;
+                      if (!val) return;
+                      try {
+                        await api.post('/api/v1/communication/trigger-manual', {
+                          leadId: id,
+                          triggerName: val
+                        });
+                        addToast('success', 'Template messages enqueued!');
+                        setTimeout(() => {
+                          handleWhatsappTabClick();
+                        }, 500);
+                      } catch (err: any) {
+                        addToast('error', err.message || 'Failed to dispatch template');
+                      }
+                    }}
+                  >
+                    Send Template 🚀
+                  </button>
+                </div>
               </div>
 
               {/* Chat Input form */}

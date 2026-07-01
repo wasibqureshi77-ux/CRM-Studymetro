@@ -198,179 +198,141 @@ async function main() {
   });
 
   // 7. Seed WhatsApp Templates & Automations (Idempotent)
-  console.log('💬 Seeding WhatsApp templates & automations...');
+  console.log('💬 Seeding communication templates...');
 
-  const templatesToSeed = [
-    {
-      name: 'Welcome Template',
-      message: 'Hello {{name}}, welcome to Study Metro! We received your registration. Your Lead Number is {{leadNumber}}.',
-      variables: ['name', 'leadNumber']
-    },
-    {
-      name: 'Document Pending Template',
-      message: 'Hello {{name}}, some documents are still pending for your application. Please upload them as soon as possible.',
-      variables: ['name']
-    },
-    {
-      name: 'Followup Reminder Template',
-      message: 'Hello {{name}}, this is a reminder for your upcoming counselling session scheduled for {{followupDate}}.',
-      variables: ['name', 'followupDate']
-    }
+  // Seed default Email Templates
+  const emailTemplates = [
+    { name: 'WELCOME', subject: 'Welcome to Study Metro!', body: 'Dear {{studentName}},\n\nWelcome to Study Metro!\n\nYour personalized Study Metro brochure:\n\n{{brochureLink}}\n\nReference ID: {{leadNumber}}\n\nRegards,\nStudy Metro Team', category: 'Lead' },
+    { name: 'DOCUMENT_REQUEST', subject: 'Documents Required for Application', body: 'Dear {{studentName}},\n\nPlease upload the required documents to proceed with your application:\n{{pendingDocuments}}\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team', category: 'Documents' },
+    { name: 'FOLLOWUP_REMINDER', subject: 'Followup Appointment Reminder', body: 'Dear {{studentName}},\n\nThis is a friendly reminder that you have a scheduled followup on {{followupDate}} with counsellor {{assignedCounsellor}}.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team', category: 'Follow-up' },
+    { name: 'VISA_APPROVED', subject: 'Visa Approved!', body: 'Dear {{studentName}},\n\nFantastic news! Your visa for {{country}} has been approved!\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team', category: 'Visa' },
+    { name: 'OFFER_RECEIVED', subject: 'Offer Letter Received!', body: 'Dear {{studentName}},\n\nCongratulations! We have received an offer letter for your application to {{course}} in {{country}}.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team', category: 'Admissions' }
   ];
 
-  const templateMap: Record<string, string> = {};
+  const emailMap: Record<string, string> = {};
+  for (const t of emailTemplates) {
+    let existing = await prisma.emailTemplate.findFirst({ where: { tenantId, name: t.name } });
+    if (!existing) {
+      existing = await prisma.emailTemplate.create({
+        data: {
+          tenantId,
+          name: t.name,
+          subject: t.subject,
+          category: t.category,
+          body: t.body,
+          isActive: true
+        }
+      });
+      await prisma.emailTemplateVersion.create({
+        data: {
+          templateId: existing.id,
+          version: 1,
+          subject: existing.subject,
+          body: existing.body
+        }
+      });
+    }
+    emailMap[t.name] = existing.id;
+  }
 
-  for (const t of templatesToSeed) {
-    let existing = await prisma.whatsappTemplate.findFirst({
-      where: { tenantId, name: t.name }
-    });
+  // Seed default WhatsApp Templates
+  const whatsappTemplates = [
+    { name: 'WELCOME', body: 'Hello {{studentName}},\n\nWelcome to Study Metro!\n\nYour personalized Study Metro brochure:\n\n{{brochureLink}}\n\nReference ID: {{leadNumber}}\n\nRegards,\nStudy Metro Team', category: 'Lead' },
+    { name: 'DOCUMENT_REQUEST', body: 'Hello {{studentName}}, please upload the required documents to proceed: {{pendingDocuments}}. Reference ID: {{leadNumber}}', category: 'Documents' },
+    { name: 'FOLLOWUP_REMINDER', body: 'Hello {{studentName}}, reminder of your followup on {{followupDate}} with counsellor {{assignedCounsellor}}. Reference ID: {{leadNumber}}', category: 'Follow-up' },
+    { name: 'VISA_APPROVED', body: 'Hello {{studentName}}, fantastic news! Your visa for {{country}} has been approved! 🎉 Reference ID: {{leadNumber}}', category: 'Visa' },
+    { name: 'OFFER_RECEIVED', body: 'Hello {{studentName}}, congratulations! Offer letter received for {{course}} in {{country}}. Reference ID: {{leadNumber}}', category: 'Admissions' }
+  ];
 
+  const whatsappMap: Record<string, string> = {};
+  for (const t of whatsappTemplates) {
+    let existing = await prisma.whatsappTemplate.findFirst({ where: { tenantId, name: t.name } });
     if (!existing) {
       existing = await prisma.whatsappTemplate.create({
         data: {
           tenantId,
           name: t.name,
-          message: t.message,
-          variables: t.variables,
+          category: t.category,
+          body: t.body,
+          message: t.body,
           isActive: true
         }
       });
-      console.log(`Created template: ${t.name}`);
-    } else {
-      console.log(`Template already exists, skipping: ${t.name}`);
-    }
-    templateMap[t.name] = existing.id;
-  }
-
-  const automationsToSeed = [
-    { trigger: 'LEAD_CREATED', templateName: 'Welcome Template' },
-    { trigger: 'DOCUMENT_PENDING', templateName: 'Document Pending Template' },
-    { trigger: 'FOLLOWUP_REMINDER', templateName: 'Followup Reminder Template' }
-  ];
-
-  for (const auto of automationsToSeed) {
-    const existingAuto = await prisma.whatsappAutomation.findFirst({
-      where: { tenantId, trigger: auto.trigger }
-    });
-
-    if (!existingAuto) {
-      await prisma.whatsappAutomation.create({
+      await prisma.whatsappTemplateVersion.create({
         data: {
-          tenantId,
-          trigger: auto.trigger,
-          templateId: templateMap[auto.templateName],
-          enabled: true
+          templateId: existing.id,
+          version: 1,
+          body: existing.body,
+          message: existing.body
         }
       });
-      console.log(`Created automation rule: ${auto.trigger}`);
-    } else {
-      console.log(`Automation rule already exists, skipping: ${auto.trigger}`);
     }
+    whatsappMap[t.name] = existing.id;
   }
 
-  // 8. Seed Multi-Channel Enterprise Communication Automations (Idempotent)
-  console.log('⚡ Seeding Enterprise Communication Automations...');
-
-  const commTemplatesToSeed = [
-    {
-      name: 'Welcome Message Template',
-      subject: 'Welcome to Study Metro!',
-      body: 'Hello {{studentName}},\n\nWelcome to Study Metro Jaipur.\n\nLead Number:\n{{leadNumber}}\n\nPlease review your personalised brochure before our counselling session.\n\n📘 {{brochureTitle}}\n\n{{brochureLink}}\n\nYou can also access your Student Portal:\n\n{{portalLink}}\n\nRegards\nStudy Metro Jaipur',
-      variables: ['studentName', 'leadNumber', 'brochureTitle', 'brochureLink', 'portalLink']
-    },
-    {
-      name: 'Brochure Shared Template',
-      subject: 'Your Brochure Download Link',
-      body: 'Hello {{studentName}},\n\nHere is your requested brochure:\n📘 {{brochureTitle}}\n{{brochureLink}}',
-      variables: ['studentName', 'brochureTitle', 'brochureLink']
-    },
-    {
-      name: 'Student Portal Activated Template',
-      subject: 'Your Student Portal Access',
-      body: 'Hello {{studentName}},\n\nyour student portal account is ready. Access it here:\n{{portalLink}}',
-      variables: ['studentName', 'portalLink']
-    },
-    {
-      name: 'Document Pending Reminder Template',
-      subject: 'Pending Documents Checklist Reminder',
-      body: 'Hello {{studentName}}\n\nThe following documents are still pending.\n\n{{pendingDocuments}}\n\nUpload them here:\n\n{{portalLink}}',
-      variables: ['studentName', 'pendingDocuments', 'portalLink']
-    },
-    {
-      name: 'Follow-up Session Reminder Template',
-      subject: 'Counselling Followup Reminder',
-      body: 'Hello {{studentName}}\n\nReminder\n\nYour counselling session is scheduled for\n\n{{followupDate}}',
-      variables: ['studentName', 'followupDate']
-    },
-    {
-      name: 'Offer Letter Received Template',
-      subject: 'Congratulations! Offer Letter Received',
-      body: 'Hello {{studentName}},\n\nyou have received an offer letter for {{course}} in {{country}}.',
-      variables: ['studentName', 'course', 'country']
-    },
-    {
-      name: 'Visa Approved Template',
-      subject: 'Visa Request Approved!',
-      body: 'Hello {{studentName}},\n\nyour study visa application has been approved. Visa Status: {{visaStatus}}',
-      variables: ['studentName', 'visaStatus']
-    }
+  // Seed default SMS Templates (Stubs)
+  const smsTemplates = [
+    { name: 'WELCOME', body: 'Welcome to Study Metro! Reference ID: {{leadNumber}}' }
   ];
-
-  const commTemplateMap: Record<string, string> = {};
-
-  for (const ct of commTemplatesToSeed) {
-    let existing = await prisma.communicationAutomationTemplate.findFirst({
-      where: { tenantId, name: ct.name }
-    });
-
+  const smsMap: Record<string, string> = {};
+  for (const t of smsTemplates) {
+    let existing = await prisma.smsTemplate.findFirst({ where: { tenantId, name: t.name } });
     if (!existing) {
-      existing = await prisma.communicationAutomationTemplate.create({
+      existing = await prisma.smsTemplate.create({
         data: {
           tenantId,
-          name: ct.name,
-          subject: ct.subject,
-          body: ct.body,
-          variables: ct.variables,
+          name: t.name,
+          category: 'Lead',
+          body: t.body,
           isActive: true
         }
       });
-      console.log(`Created communication template: ${ct.name}`);
-    } else {
-      console.log(`Communication template already exists, skipping: ${ct.name}`);
+      await prisma.smsTemplateVersion.create({
+        data: {
+          templateId: existing.id,
+          version: 1,
+          body: existing.body
+        }
+      });
     }
-    commTemplateMap[ct.name] = existing.id;
+    smsMap[t.name] = existing.id;
   }
 
-  const commAutomationsToSeed = [
-    { name: 'Lead Created Welcome Automation', trigger: 'LEAD_CREATED', templateName: 'Welcome Message Template', channels: ['WHATSAPP', 'EMAIL'] },
-    { name: 'Brochure Shared Automation', trigger: 'BROCHURE_SHARED', templateName: 'Brochure Shared Template', channels: ['WHATSAPP', 'EMAIL'] },
-    { name: 'Student Portal Activated Automation', trigger: 'PORTAL_ACTIVATED', templateName: 'Student Portal Activated Template', channels: ['WHATSAPP', 'EMAIL'] },
-    { name: 'Document Reminder Automation', trigger: 'DOCUMENT_PENDING', templateName: 'Document Pending Reminder Template', channels: ['WHATSAPP'] },
-    { name: 'Follow-up Session Reminder Automation', trigger: 'FOLLOWUP_REMINDER', templateName: 'Follow-up Session Reminder Template', channels: ['WHATSAPP'] },
-    { name: 'Offer Letter Received Automation', trigger: 'OFFER_RECEIVED', templateName: 'Offer Letter Received Template', channels: ['WHATSAPP', 'EMAIL'] },
-    { name: 'Visa Approved Automation', trigger: 'VISA_APPROVED', templateName: 'Visa Approved Template', channels: ['WHATSAPP', 'EMAIL'] }
+  // Seed default Automation Rules
+  const defaultRules = [
+    { name: 'Welcome Email Rule', trigger: 'LEAD_CREATED', channel: 'EMAIL', templateName: 'WELCOME' },
+    { name: 'Welcome WhatsApp Rule', trigger: 'LEAD_CREATED', channel: 'WHATSAPP', templateName: 'WELCOME' },
+    { name: 'Document Pending Email Rule', trigger: 'DOCUMENT_PENDING', channel: 'EMAIL', templateName: 'DOCUMENT_REQUEST' },
+    { name: 'Document Pending WhatsApp Rule', trigger: 'DOCUMENT_PENDING', channel: 'WHATSAPP', templateName: 'DOCUMENT_REQUEST' },
+    { name: 'Follow-up Session Email Rule', trigger: 'FOLLOWUP_REMINDER', channel: 'EMAIL', templateName: 'FOLLOWUP_REMINDER' },
+    { name: 'Follow-up Session WhatsApp Rule', trigger: 'FOLLOWUP_REMINDER', channel: 'WHATSAPP', templateName: 'FOLLOWUP_REMINDER' },
+    { name: 'Visa Approved Email Rule', trigger: 'VISA_APPROVED', channel: 'EMAIL', templateName: 'VISA_APPROVED' },
+    { name: 'Visa Approved WhatsApp Rule', trigger: 'VISA_APPROVED', channel: 'WHATSAPP', templateName: 'VISA_APPROVED' },
+    { name: 'Offer Letter Received Email Rule', trigger: 'OFFER_RECEIVED', channel: 'EMAIL', templateName: 'OFFER_RECEIVED' },
+    { name: 'Offer Letter Received WhatsApp Rule', trigger: 'OFFER_RECEIVED', channel: 'WHATSAPP', templateName: 'OFFER_RECEIVED' }
   ];
 
-  for (const ca of commAutomationsToSeed) {
-    const existingAuto = await prisma.communicationAutomation.findFirst({
-      where: { tenantId, name: ca.name }
+  for (const r of defaultRules) {
+    const existing = await prisma.automationRule.findFirst({
+      where: { tenantId, trigger: r.trigger, channel: r.channel }
     });
+    if (!existing) {
+      const emailTemplateId = r.channel === 'EMAIL' ? emailMap[r.templateName] : null;
+      const whatsappTemplateId = r.channel === 'WHATSAPP' ? whatsappMap[r.templateName] : null;
 
-    if (!existingAuto) {
-      await prisma.communicationAutomation.create({
+      await prisma.automationRule.create({
         data: {
           tenantId,
-          name: ca.name,
-          trigger: ca.trigger,
-          channels: ca.channels,
-          templateId: commTemplateMap[ca.templateName],
+          name: r.name,
+          trigger: r.trigger,
+          channel: r.channel,
+          emailTemplateId,
+          whatsappTemplateId,
           delayType: 'IMMEDIATE',
           enabled: true
         }
       });
-      console.log(`Created communication automation rule: ${ca.name}`);
-    } else {
-      console.log(`Communication automation rule already exists, skipping: ${ca.name}`);
+      console.log(`Created automation rule: ${r.name}`);
     }
   }
 

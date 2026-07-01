@@ -63,6 +63,8 @@ export const api = {
     apiFetch(path, { ...options, method: 'GET' }),
   post: (path: string, body?: any, options?: RequestOptions) =>
     apiFetch(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
+  put: (path: string, body?: any, options?: RequestOptions) =>
+    apiFetch(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),
   patch: (path: string, body?: any, options?: RequestOptions) =>
     apiFetch(path, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
   delete: (path: string, options?: RequestOptions) =>

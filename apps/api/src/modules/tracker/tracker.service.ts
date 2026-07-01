@@ -513,6 +513,42 @@ export class TrackerService {
         }
       });
 
+      // Find and assign active brochure if matches category
+      const brochure = await this.prisma.brochure.findFirst({
+        where: { category: existingLead.leadCategory, isActive: true },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (brochure) {
+        const token = crypto.randomBytes(24).toString('hex');
+        await this.prisma.brochureAssignment.create({
+          data: {
+            leadId: existingLead.id,
+            brochureId: brochure.id,
+            token,
+            tracking: {
+              create: {
+                opened: false,
+                readingTime: 0,
+                pageViews: 0,
+                completionPercentage: 0,
+                lastPageViewed: 0,
+                downloadCount: 0,
+                viewedPages: '',
+                engagementScore: 0,
+              },
+            },
+          },
+        });
+      }
+
+      // Trigger unified LEAD_CREATED event-driven communication
+      try {
+        await this.communicationService.triggerEvent('LEAD_CREATED', existingLead.id);
+      } catch (err: any) {
+        console.error('[CommunicationAutomation] Tracker duplicate trigger error for LEAD_CREATED:', err.message);
+      }
+
       return { lead: existingLead, created: false };
     }
 
@@ -664,14 +700,12 @@ export class TrackerService {
       brochureLinkToken = token;
     }
 
-    // Enqueue welcome_brochure communication
-    await this.communicationService.enqueue(
-      newLead.id,
-      CommunicationChannel.EMAIL,
-      'WELCOME_BROCHURE',
-      { brochureLink: brochureLinkToken || '' },
-      'TrackerService'
-    );
+    // Trigger unified LEAD_CREATED event-driven communication
+    try {
+      await this.communicationService.triggerEvent('LEAD_CREATED', newLead.id);
+    } catch (err: any) {
+      console.error('[CommunicationAutomation] Tracker trigger error for LEAD_CREATED:', err.message);
+    }
 
     return { lead: newLead, created: true };
   }

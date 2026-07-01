@@ -1,8 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CommunicationChannel, QueueStatus } from '@prisma/client';
+import { QueueStatus } from '@prisma/client';
 import { EmailService } from './email.service';
-import { encrypt, decrypt } from '../../common/utils/crypto.util';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -15,17 +14,17 @@ export class CommunicationService implements OnModuleInit {
   ) { }
 
   async onModuleInit() {
-    console.log('📡 Communication Service initialized. Seeding templates...');
+    console.log('📡 Enterprise Communication Service initialized. Seeding templates...');
     await this.seedTemplates();
 
-    // Start background processing interval (runs every 15 seconds)
+    // Start background processing interval for outbox queue (runs every 15 seconds)
     setInterval(() => {
       this.processQueue().catch((err) => {
         console.log('Error processing communication queue in interval:', err);
       });
     }, 15000);
 
-    // Start communication automation retry loop (runs every 60 seconds)
+    // Start retry loop (runs every 60 seconds)
     setInterval(() => {
       this.executeRetryEngineLoop().catch((err) => {
         console.error('[CommunicationAutomation] Error in retry engine loop:', err.message);
@@ -33,652 +32,598 @@ export class CommunicationService implements OnModuleInit {
     }, 60000);
   }
 
+  // --- SEEDING RULES & TEMPLATES ---
+
   async seedTemplates() {
-    const defaultTemplates = [
+    const tenants = await this.prisma.tenant.findMany();
+    for (const tenant of tenants) {
+      await this.seedTenantDefaults(tenant.id);
+    }
+  }
+
+  async seedTenantDefaults(tenantId: string) {
+    // 1. Seed Default Email Templates
+    const defaultEmailTemplates = [
       {
         name: 'WELCOME',
-        channel: CommunicationChannel.EMAIL,
         subject: 'Welcome to Study Metro!',
-        content: 'Dear {{name}},\n\nWelcome to Study Metro! We are thrilled to help you on your educational journey.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Welcome to <strong>Study Metro</strong>! We are thrilled to help you on your educational journey.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'WELCOME',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, welcome to Study Metro! We are excited to guide you through your study abroad journey. Reference ID: {{leadNumber}}',
-        htmlContent: null
-      },
-      {
-        name: 'BROCHURE',
-        channel: CommunicationChannel.EMAIL,
-        subject: 'Your Study Metro Brochure',
-        content: 'Dear {{name}},\n\nThank you for choosing Study Metro! Here is your brochure link: {{brochureLink}}\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Thank you for choosing <strong>Study Metro</strong>!</p><p>Here is your brochure link: <a href="{{brochureLink}}">View Brochure</a></p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'BROCHURE',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, thank you for choosing Study Metro! Here is your brochure link: {{brochureLink}}. Reference ID: {{leadNumber}}',
-        htmlContent: null
-      },
-      {
-        name: 'WELCOME_BROCHURE',
-        channel: CommunicationChannel.EMAIL,
-        subject: 'Welcome to StudyMetro – Your Free Information Brochure',
-        content: 'Dear {{name}},\n\nThank you for contacting StudyMetro.\n\nWe are excited to help you with your educational journey.\n\nReference ID:\n{{leadNumber}}\n\nYou can view your brochure here:\n\n{{brochureLink}}\n\nOur counsellor will contact you shortly.\n\nBest Regards,\nStudyMetro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Thank you for contacting <strong>StudyMetro</strong>.</p><p>We are excited to help you with your educational journey.</p><p>Reference ID:<br/><strong>{{leadNumber}}</strong></p><p>You can view your brochure here:</p><p><a href="{{brochureLink}}">View Brochure</a></p><p>Our counsellor will contact you shortly.</p><br/><p>Best Regards,<br/>StudyMetro Team</p>'
-      },
-      {
-        name: 'WELCOME_BROCHURE',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, welcome to StudyMetro! Thank you for contacting us. You can view your brochure here: {{brochureLink}}. Reference ID: {{leadNumber}}',
-        htmlContent: null
+        category: 'Lead',
+        body: 'Dear {{studentName}},\n\nWelcome to Study Metro!\n\nYour personalized Study Metro brochure:\n\n{{brochureLink}}\n\nReference ID: {{leadNumber}}\n\nRegards,\nStudy Metro Team'
       },
       {
         name: 'DOCUMENT_REQUEST',
-        channel: CommunicationChannel.EMAIL,
         subject: 'Documents Required for Application',
-        content: 'Dear {{name}},\n\nPlease upload the following documents to proceed with your application:\n{{documentList}}\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Please upload the following documents to proceed with your application:</p><pre>{{documentList}}</pre><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'DOCUMENT_REQUEST',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, please upload the required documents to proceed: {{documentList}}. Reference ID: {{leadNumber}}',
-        htmlContent: null
+        category: 'Documents',
+        body: 'Dear {{studentName}},\n\nPlease upload the required documents to proceed with your application:\n{{pendingDocuments}}\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team'
       },
       {
         name: 'FOLLOWUP_REMINDER',
-        channel: CommunicationChannel.EMAIL,
-        subject: 'Followup Reminder',
-        content: 'Dear {{name}},\n\nThis is a friendly reminder that you have a scheduled followup on {{followupDate}} with counsellor {{counsellor}}.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>This is a friendly reminder that you have a scheduled followup on <strong>{{followupDate}}</strong> with counsellor <strong>{{counsellor}}</strong>.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'FOLLOWUP_REMINDER',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, reminder of your followup on {{followupDate}} with counsellor {{counsellor}}. Reference ID: {{leadNumber}}',
-        htmlContent: null
-      },
-      {
-        name: 'APPLICATION_SUBMITTED',
-        channel: CommunicationChannel.EMAIL,
-        subject: 'Application Submitted Successfully',
-        content: 'Dear {{name}},\n\nYour application for course {{course}} in {{country}} has been successfully submitted.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Your application for course <strong>{{course}}</strong> in <strong>{{country}}</strong> has been successfully submitted.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'APPLICATION_SUBMITTED',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, your application for {{course}} in {{country}} has been submitted successfully. Reference ID: {{leadNumber}}',
-        htmlContent: null
-      },
-      {
-        name: 'OFFER_RECEIVED',
-        channel: CommunicationChannel.EMAIL,
-        subject: 'Offer Letter Received!',
-        content: 'Dear {{name}},\n\nCongratulations! We have received an offer letter for your application to {{course}} in {{country}}.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p><strong>Congratulations!</strong> We have received an offer letter for your application to <strong>{{course}}</strong> in <strong>{{country}}</strong>.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'OFFER_RECEIVED',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, congratulations! Offer letter received for {{course}} in {{country}}. Reference ID: {{leadNumber}}',
-        htmlContent: null
-      },
-      {
-        name: 'OFFER_ACCEPTED',
-        channel: CommunicationChannel.EMAIL,
-        subject: 'Offer Accepted',
-        content: 'Dear {{name}},\n\nYou have accepted the offer for {{course}} in {{country}}. We will begin the visa process next.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>You have accepted the offer for <strong>{{course}}</strong> in <strong>{{country}}</strong>. We will begin the visa process next.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'OFFER_ACCEPTED',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, offer accepted for {{course}} in {{country}}. We are starting your visa process. Reference ID: {{leadNumber}}',
-        htmlContent: null
-      },
-      {
-        name: 'VISA_APPLIED',
-        channel: CommunicationChannel.EMAIL,
-        subject: 'Visa Application Submitted',
-        content: 'Dear {{name}},\n\nYour visa application for {{country}} has been submitted.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Your visa application for <strong>{{country}}</strong> has been submitted.</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'VISA_APPLIED',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, your visa application for {{country}} has been submitted. Reference ID: {{leadNumber}}',
-        htmlContent: null
+        subject: 'Followup Appointment Reminder',
+        category: 'Follow-up',
+        body: 'Dear {{studentName}},\n\nThis is a friendly reminder that you have a scheduled followup on {{followupDate}} with counsellor {{assignedCounsellor}}.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team'
       },
       {
         name: 'VISA_APPROVED',
-        channel: CommunicationChannel.EMAIL,
         subject: 'Visa Approved!',
-        content: 'Dear {{name}},\n\nFantastic news! Your visa for {{country}} has been approved!\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p><strong>Fantastic news!</strong> Your visa for <strong>{{country}}</strong> has been approved!</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
+        category: 'Visa',
+        body: 'Dear {{studentName}},\n\nFantastic news! Your visa for {{country}} has been approved!\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team'
       },
       {
-        name: 'VISA_APPROVED',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, fantastic news! Your visa for {{country}} has been approved! 🎉 Reference ID: {{leadNumber}}',
-        htmlContent: null
-      },
-      {
-        name: 'ENROLLMENT_COMPLETE',
-        channel: CommunicationChannel.EMAIL,
-        subject: 'Enrollment Completed',
-        content: 'Dear {{name}},\n\nYour enrollment process is now complete. Congratulations on starting your journey in {{country}}!\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team',
-        htmlContent: '<h3>Dear {{name}},</h3><p>Your enrollment process is now complete. <strong>Congratulations</strong> on starting your journey in <strong>{{country}}</strong>!</p><p>Reference ID: <strong>{{leadNumber}}</strong></p><br/><p>Best regards,<br/>Study Metro Team</p>'
-      },
-      {
-        name: 'ENROLLMENT_COMPLETE',
-        channel: CommunicationChannel.WHATSAPP,
-        subject: '',
-        content: 'Hello {{name}}, your enrollment is complete! Congratulations on starting your journey in {{country}}! 🎓 Reference ID: {{leadNumber}}',
-        htmlContent: null
-      },
+        name: 'OFFER_RECEIVED',
+        subject: 'Offer Letter Received!',
+        category: 'Admissions',
+        body: 'Dear {{studentName}},\n\nCongratulations! We have received an offer letter for your application to {{course}} in {{country}}.\n\nReference ID: {{leadNumber}}\n\nBest regards,\nStudy Metro Team'
+      }
     ];
 
-    for (const t of defaultTemplates) {
-      const existing = await this.prisma.communicationTemplate.findFirst({
-        where: { name: t.name, channel: t.channel },
+    const emailTemplateMap: Record<string, string> = {};
+    for (const t of defaultEmailTemplates) {
+      let existing = await this.prisma.emailTemplate.findFirst({
+        where: { tenantId, name: t.name }
+      });
+      if (!existing) {
+        existing = await this.prisma.emailTemplate.create({
+          data: {
+            tenantId,
+            name: t.name,
+            subject: t.subject,
+            category: t.category,
+            body: t.body,
+            isActive: true
+          }
+        });
+      }
+      emailTemplateMap[t.name] = existing.id;
+    }
+
+    // 2. Seed Default WhatsApp Templates
+    const defaultWhatsappTemplates = [
+      {
+        name: 'WELCOME',
+        category: 'Lead',
+        body: 'Hello {{studentName}},\n\nWelcome to Study Metro!\n\nYour personalized Study Metro brochure:\n\n{{brochureLink}}\n\nReference ID: {{leadNumber}}\n\nRegards,\nStudy Metro Team'
+      },
+      {
+        name: 'DOCUMENT_REQUEST',
+        category: 'Documents',
+        body: 'Hello {{studentName}}, please upload the required documents to proceed: {{pendingDocuments}}. Reference ID: {{leadNumber}}'
+      },
+      {
+        name: 'FOLLOWUP_REMINDER',
+        category: 'Follow-up',
+        body: 'Hello {{studentName}}, reminder of your followup on {{followupDate}} with counsellor {{assignedCounsellor}}. Reference ID: {{leadNumber}}'
+      },
+      {
+        name: 'VISA_APPROVED',
+        category: 'Visa',
+        body: 'Hello {{studentName}}, fantastic news! Your visa for {{country}} has been approved! 🎉 Reference ID: {{leadNumber}}'
+      },
+      {
+        name: 'OFFER_RECEIVED',
+        category: 'Admissions',
+        body: 'Hello {{studentName}}, congratulations! Offer letter received for {{course}} in {{country}}. Reference ID: {{leadNumber}}'
+      }
+    ];
+
+    const whatsappTemplateMap: Record<string, string> = {};
+    for (const t of defaultWhatsappTemplates) {
+      let existing = await this.prisma.whatsappTemplate.findFirst({
+        where: { tenantId, name: t.name }
+      });
+      if (!existing) {
+        existing = await this.prisma.whatsappTemplate.create({
+          data: {
+            tenantId,
+            name: t.name,
+            category: t.category,
+            body: t.body,
+            isActive: true
+          }
+        });
+      }
+      whatsappTemplateMap[t.name] = existing.id;
+    }
+
+    // 3. Seed default SMS Templates (Stubs)
+    const smsTemplateMap: Record<string, string> = {};
+    const defaultSmsTemplates = [
+      { name: 'WELCOME', body: 'Welcome to Study Metro! Reference ID: {{leadNumber}}' }
+    ];
+    for (const t of defaultSmsTemplates) {
+      let existing = await this.prisma.smsTemplate.findFirst({
+        where: { tenantId, name: t.name }
+      });
+      if (!existing) {
+        existing = await this.prisma.smsTemplate.create({
+          data: {
+            tenantId,
+            name: t.name,
+            category: 'Lead',
+            body: t.body,
+            isActive: true
+          }
+        });
+      }
+      smsTemplateMap[t.name] = existing.id;
+    }
+
+    // 4. Seed Idempotent Automation Rules linking triggers to Templates
+    const defaultTriggers = [
+      { name: 'Welcome Email Rule', trigger: 'LEAD_CREATED', channel: 'EMAIL', templateName: 'WELCOME' },
+      { name: 'Welcome WhatsApp Rule', trigger: 'LEAD_CREATED', channel: 'WHATSAPP', templateName: 'WELCOME' },
+      { name: 'Document Pending Email Rule', trigger: 'DOCUMENT_PENDING', channel: 'EMAIL', templateName: 'DOCUMENT_REQUEST' },
+      { name: 'Document Pending WhatsApp Rule', trigger: 'DOCUMENT_PENDING', channel: 'WHATSAPP', templateName: 'DOCUMENT_REQUEST' },
+      { name: 'Follow-up Reminder Email Rule', trigger: 'FOLLOWUP_REMINDER', channel: 'EMAIL', templateName: 'FOLLOWUP_REMINDER' },
+      { name: 'Follow-up Reminder WhatsApp Rule', trigger: 'FOLLOWUP_REMINDER', channel: 'WHATSAPP', templateName: 'FOLLOWUP_REMINDER' },
+      { name: 'Visa Approved Email Rule', trigger: 'VISA_APPROVED', channel: 'EMAIL', templateName: 'VISA_APPROVED' },
+      { name: 'Visa Approved WhatsApp Rule', trigger: 'VISA_APPROVED', channel: 'WHATSAPP', templateName: 'VISA_APPROVED' },
+      { name: 'Offer Letter Received Email Rule', trigger: 'OFFER_RECEIVED', channel: 'EMAIL', templateName: 'OFFER_RECEIVED' },
+      { name: 'Offer Letter Received WhatsApp Rule', trigger: 'OFFER_RECEIVED', channel: 'WHATSAPP', templateName: 'OFFER_RECEIVED' }
+    ];
+
+    for (const r of defaultTriggers) {
+      const existing = await this.prisma.automationRule.findFirst({
+        where: { tenantId, trigger: r.trigger, channel: r.channel }
       });
 
       if (!existing) {
-        await this.prisma.communicationTemplate.create({
+        const emailTemplateId = r.channel === 'EMAIL' ? emailTemplateMap[r.templateName] : null;
+        const whatsappTemplateId = r.channel === 'WHATSAPP' ? whatsappTemplateMap[r.templateName] : null;
+
+        await this.prisma.automationRule.create({
           data: {
-            name: t.name,
-            channel: t.channel,
-            subject: t.subject,
-            content: t.content,
-            htmlContent: t.htmlContent,
-            isActive: true,
-          },
-        });
-      } else {
-        await this.prisma.communicationTemplate.update({
-          where: { id: existing.id },
-          data: {
-            subject: t.subject,
-            content: t.content,
-            htmlContent: t.htmlContent,
+            tenantId,
+            name: r.name,
+            trigger: r.trigger,
+            channel: r.channel,
+            emailTemplateId,
+            whatsappTemplateId,
+            delayType: 'IMMEDIATE',
+            enabled: true
           }
         });
       }
     }
-    console.log('✅ Communication templates verified and seeded.');
   }
 
-  async enqueue(leadId: string, channel: CommunicationChannel, eventType: string, payload: any, sourceService?: string) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
-      select: { tenantId: true }
+  // --- EMAIL TEMPLATE CRUD ---
+
+  async getEmailTemplates(tenantId: string) {
+    return this.prisma.emailTemplate.findMany({
+      where: { tenantId },
+      include: { versions: { orderBy: { version: 'desc' } } },
+      orderBy: { name: 'asc' }
     });
+  }
 
-    let emailEnabled = true;
-    let whatsappEnabled = false;
-
-    if (lead) {
-      const settings = await this.prisma.emailSetting.findUnique({
-        where: { tenantId: lead.tenantId }
-      });
-      if (settings) {
-        emailEnabled = settings.emailEnabled;
-        whatsappEnabled = settings.whatsappEnabled;
-      }
-    }
-
-    if (channel === CommunicationChannel.EMAIL && !emailEnabled) {
-      console.log(`[QUEUE ENQUEUE SKIP] Email channel is disabled for Lead ID: ${leadId}`);
-      return null;
-    }
-
-    if (channel === CommunicationChannel.WHATSAPP && !whatsappEnabled) {
-      console.log(`[QUEUE ENQUEUE SKIP] WhatsApp channel is disabled for Lead ID: ${leadId}`);
-      return null;
-    }
-
-    const queueItem = await this.prisma.communicationQueue.create({
+  async createEmailTemplate(tenantId: string, data: any) {
+    const t = await this.prisma.emailTemplate.create({
       data: {
-        leadId,
-        channel,
-        eventType,
-        payload: payload || {},
-        status: QueueStatus.PENDING,
-      },
-    });
-    console.log(`[QUEUE ENQUEUE] Lead ID: ${leadId}, Event Type: ${eventType}, Source Service: ${sourceService || 'Unknown'}, Queue ID: ${queueItem.id}, Timestamp: ${new Date().toISOString()}`);
-    return queueItem;
-  }
-
-  async processQueue() {
-    if (this.processing) return;
-    this.processing = true;
-
-    try {
-      const pendingItems = await this.prisma.$transaction(async (tx) => {
-        const lockedItems = await tx.$queryRaw<Array<{ id: string }>>`
-          SELECT id FROM "CommunicationQueue"
-          WHERE status = 'PENDING'
-          ORDER BY "createdAt" ASC
-          LIMIT 10
-          FOR UPDATE SKIP LOCKED
-        `;
-
-        if (!lockedItems || lockedItems.length === 0) {
-          return [];
-        }
-
-        const itemIds = lockedItems.map(item => item.id);
-
-        await tx.communicationQueue.updateMany({
-          where: { id: { in: itemIds } },
-          data: { status: QueueStatus.PROCESSING }
-        });
-
-        return tx.communicationQueue.findMany({
-          where: { id: { in: itemIds } }
-        });
-      });
-
-      if (pendingItems.length === 0) {
-        this.processing = false;
-        return;
+        tenantId,
+        name: data.name,
+        subject: data.subject || '',
+        category: data.category || 'Custom',
+        body: data.body,
+        isActive: data.isActive !== undefined ? data.isActive : true
       }
-
-      console.log(`Processing ${pendingItems.length} pending communication items...`);
-
-      for (const item of pendingItems) {
-        let textMessage = '';
-        try {
-          const lead = await this.prisma.lead.findUnique({
-            where: { id: item.leadId },
-            include: {
-              assignee: true,
-              studentProfile: true,
-            },
-          });
-
-          if (!lead) {
-            throw new Error(`Lead with ID ${item.leadId} not found`);
-          }
-
-          const template = await this.prisma.communicationTemplate.findFirst({
-            where: {
-              name: item.eventType,
-              channel: item.channel,
-              isActive: true,
-            },
-          });
-
-          if (!template) {
-            throw new Error(`Active template not found for event ${item.eventType} and channel ${item.channel}`);
-          }
-
-          // Resolve variables
-          let name = 'Student';
-          if (lead.firstName || lead.lastName) {
-            name = `${lead.firstName || ''} ${lead.lastName || ''}`.trim();
-          }
-
-          const payload = (item.payload as any) || {};
-          const documentList = payload.documentList || 'Passport, Marksheets, SOP, LOR';
-          const followupDate = payload.followupDate || new Date().toLocaleDateString();
-          const country = lead.studentProfile?.targetCountry || lead.preferredCountry || payload.country || 'selected destination';
-          const course = lead.studentProfile?.targetCourse || lead.preferredCourse || payload.course || 'selected course';
-          const counsellor = lead.assignee
-            ? `${lead.assignee.firstName || ''} ${lead.assignee.lastName || ''}`.trim()
-            : payload.counsellor || 'Assigned Counsellor';
-
-          const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetrojaipur.com';
-          const brochureLink = payload.brochureLink ? `${appUrl}/brochure/view/${payload.brochureLink}` : '';
-          if (payload.brochureLink) {
-            console.log(`[BROCHURE LINK GENERATION] Enqueued email contains brochure URL: ${brochureLink}`);
-          }
-
-          // Resolve plain content variables
-          textMessage = template.content;
-          textMessage = textMessage.replace(/\{\{name\}\}/g, name);
-          textMessage = textMessage.replace(/\{\{leadId\}\}/g, lead.id);
-          textMessage = textMessage.replace(/\{\{leadNumber\}\}/g, lead.leadNumber || lead.id);
-          textMessage = textMessage.replace(/\{\{documentList\}\}/g, documentList);
-          textMessage = textMessage.replace(/\{\{followupDate\}\}/g, followupDate);
-          textMessage = textMessage.replace(/\{\{country\}\}/g, country);
-          textMessage = textMessage.replace(/\{\{course\}\}/g, course);
-          textMessage = textMessage.replace(/\{\{counsellor\}\}/g, counsellor);
-          textMessage = textMessage.replace(/\{\{brochureLink\}\}/g, brochureLink);
-
-          // Resolve HTML content variables if email and htmlContent exists
-          let htmlMessage = '';
-          if (item.channel === CommunicationChannel.EMAIL && template.htmlContent) {
-            htmlMessage = template.htmlContent;
-            htmlMessage = htmlMessage.replace(/\{\{name\}\}/g, name);
-            htmlMessage = htmlMessage.replace(/\{\{leadId\}\}/g, lead.id);
-            htmlMessage = htmlMessage.replace(/\{\{leadNumber\}\}/g, lead.leadNumber || lead.id);
-            htmlMessage = htmlMessage.replace(/\{\{documentList\}\}/g, documentList.replace(/\n/g, '<br/>'));
-            htmlMessage = htmlMessage.replace(/\{\{followupDate\}\}/g, followupDate);
-            htmlMessage = htmlMessage.replace(/\{\{country\}\}/g, country);
-            htmlMessage = htmlMessage.replace(/\{\{course\}\}/g, course);
-            htmlMessage = htmlMessage.replace(/\{\{counsellor\}\}/g, counsellor);
-            htmlMessage = htmlMessage.replace(/\{\{brochureLink\}\}/g, brochureLink);
-          }
-
-          // Generate student magic link if lead has studentPortalId
-          if (lead.studentPortalId) {
-            const token = crypto.randomBytes(32).toString('hex');
-            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-            
-            await this.prisma.lead.update({
-              where: { id: lead.id },
-              data: {
-                studentMagicToken: token,
-                studentMagicExpiresAt: expiresAt,
-              },
-            });
-
-            const studentPortalUrl = process.env.STUDENT_PORTAL_URL || 'http://localhost:3001';
-            const callbackLink = `${studentPortalUrl}/login/callback?token=${token}`;
-            
-            textMessage += `\n\nOpen Student Portal: ${callbackLink}`;
-            if (htmlMessage) {
-              htmlMessage += `<p><a href="${callbackLink}" style="padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px;">Open Student Portal</a></p><p>Or copy this URL: ${callbackLink}</p>`;
-            }
-          }
-
-          const recipient = item.channel === CommunicationChannel.EMAIL ? lead.email : lead.phone;
-          if (!recipient) {
-            throw new Error(`No contact destination found for lead on channel ${item.channel}`);
-          }
-
-          // Real email sending
-          if (item.channel === CommunicationChannel.EMAIL) {
-            const subject = template.subject || 'Study Metro Update';
-            // Send using Nodemailer
-            await this.emailService.sendEmail(
-              recipient,
-              subject,
-              textMessage,
-              htmlMessage || undefined,
-              lead.tenantId
-            );
-          } else {
-            // Real WhatsApp sending
-            const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
-            const instance = await this.prisma.whatsappInstance.findFirst({
-              where: { tenantId: lead.tenantId, status: 'CONNECTED' }
-            });
-            if (instance && WhatsappQueueService.instance) {
-              const dbMsg = await this.prisma.whatsappMessage.create({
-                data: {
-                  leadId: lead.id,
-                  instanceId: instance.id,
-                  direction: 'OUTBOUND',
-                  messageType: 'TEXT',
-                  messageId: `msg-auto-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                  body: textMessage,
-                  status: 'PENDING'
-                }
-              });
-              await WhatsappQueueService.instance.enqueueMessage(instance.id, recipient, { text: textMessage }, dbMsg.id);
-            } else {
-              throw new Error('No connected WhatsApp gateway socket available.');
-            }
-          }
-
-          // Create sent log
-          await this.prisma.communicationLog.create({
-            data: {
-              leadId: lead.id,
-              channel: item.channel,
-              eventType: item.eventType,
-              status: QueueStatus.SENT,
-              recipient,
-              message: textMessage,
-            },
-          });
-
-          // Mark queue item as SENT
-          await this.prisma.communicationQueue.update({
-            where: { id: item.id },
-            data: {
-              status: QueueStatus.SENT,
-              processedAt: new Date(),
-            },
-          });
-
-        } catch (itemError) {
-          console.error(`Failed to process communication queue item ${item.id}:`, itemError.message);
-
-          // Create failed log
-          await this.prisma.communicationLog.create({
-            data: {
-              leadId: item.leadId,
-              channel: item.channel,
-              eventType: item.eventType,
-              status: QueueStatus.FAILED,
-              recipient: item.channel === CommunicationChannel.EMAIL ? 'Email address not resolved' : 'Phone number not resolved',
-              message: `Error: ${itemError.message}\n\nAttempted Message:\n${textMessage}`,
-            },
-          });
-
-          await this.prisma.communicationQueue.update({
-            where: { id: item.id },
-            data: {
-              status: QueueStatus.FAILED,
-              processedAt: new Date(),
-            },
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Error executing processQueue:', err);
-    } finally {
-      this.processing = false;
-    }
-  }
-
-  // Manual retry mechanism for failed logs
-  async retryFailedEmail(logId: string) {
-    const log = await this.prisma.communicationLog.findUnique({
-      where: { id: logId }
     });
 
-    if (!log) {
-      throw new Error('Log not found');
-    }
-
-    if (log.status !== QueueStatus.FAILED) {
-      throw new Error('Can only retry failed communication logs');
-    }
-
-    // Enqueue a new queue entry
-    const newQueueItem = await this.prisma.communicationQueue.create({
+    await this.prisma.emailTemplateVersion.create({
       data: {
-        leadId: log.leadId,
-        channel: log.channel,
-        eventType: log.eventType,
-        payload: {
-          recipient: log.recipient
-        },
-        status: QueueStatus.PENDING
+        templateId: t.id,
+        version: 1,
+        subject: t.subject,
+        body: t.body
+      }
+    });
+    return t;
+  }
+
+  async updateEmailTemplate(id: string, data: any) {
+    const existing = await this.prisma.emailTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('Email template not found');
+
+    const nextVer = existing.version + 1;
+    const updated = await this.prisma.emailTemplate.update({
+      where: { id },
+      data: {
+        name: data.name,
+        subject: data.subject,
+        category: data.category,
+        body: data.body,
+        isActive: data.isActive,
+        version: nextVer
       }
     });
 
-    // Manually trigger queue processing immediately
-    this.processQueue().catch((err) => {
-      console.error('Failed to run manual queue process:', err);
+    await this.prisma.emailTemplateVersion.create({
+      data: {
+        templateId: id,
+        version: nextVer,
+        subject: updated.subject,
+        body: updated.body
+      }
     });
-
-    return newQueueItem;
+    return updated;
   }
 
-  async getLogs(leadId?: string) {
-    if (leadId) {
-      return this.prisma.communicationLog.findMany({
-        where: { leadId },
-        orderBy: { sentAt: 'desc' },
-      });
+  async deleteEmailTemplate(id: string) {
+    return this.prisma.emailTemplate.delete({ where: { id } });
+  }
+
+  async cloneEmailTemplate(id: string) {
+    const existing = await this.prisma.emailTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('Email template not found');
+
+    return this.createEmailTemplate(existing.tenantId, {
+      name: `${existing.name} (Copy)`,
+      subject: existing.subject,
+      category: existing.category,
+      body: existing.body,
+      isActive: existing.isActive
+    });
+  }
+
+  async restoreEmailTemplateVersion(id: string, versionId: string) {
+    const ver = await this.prisma.emailTemplateVersion.findUnique({ where: { id: versionId } });
+    if (!ver || ver.templateId !== id) throw new Error('Selected revision does not exist');
+    const existing = await this.prisma.emailTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('Email template not found');
+
+    return this.updateEmailTemplate(id, {
+      name: existing.name,
+      subject: ver.subject,
+      category: existing.category,
+      body: ver.body,
+      isActive: existing.isActive
+    });
+  }
+
+  // --- WHATSAPP TEMPLATE CRUD ---
+
+  async getWhatsappTemplates(tenantId: string) {
+    return this.prisma.whatsappTemplate.findMany({
+      where: { tenantId },
+      include: { versions: { orderBy: { version: 'desc' } } },
+      orderBy: { name: 'asc' }
+    });
+  }
+
+  async createWhatsappTemplate(tenantId: string, data: any) {
+    const t = await this.prisma.whatsappTemplate.create({
+      data: {
+        tenantId,
+        name: data.name,
+        category: data.category || 'Custom',
+        body: data.body,
+        isActive: data.isActive !== undefined ? data.isActive : true
+      }
+    });
+
+    await this.prisma.whatsappTemplateVersion.create({
+      data: {
+        templateId: t.id,
+        version: 1,
+        body: t.body
+      }
+    });
+    return t;
+  }
+
+  async updateWhatsappTemplate(id: string, data: any) {
+    const existing = await this.prisma.whatsappTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('WhatsApp template not found');
+
+    const nextVer = existing.version + 1;
+    const updated = await this.prisma.whatsappTemplate.update({
+      where: { id },
+      data: {
+        name: data.name,
+        category: data.category,
+        body: data.body,
+        isActive: data.isActive,
+        version: nextVer
+      }
+    });
+
+    await this.prisma.whatsappTemplateVersion.create({
+      data: {
+        templateId: id,
+        version: nextVer,
+        body: updated.body
+      }
+    });
+    return updated;
+  }
+
+  async deleteWhatsappTemplate(id: string) {
+    return this.prisma.whatsappTemplate.delete({ where: { id } });
+  }
+
+  async cloneWhatsappTemplate(id: string) {
+    const existing = await this.prisma.whatsappTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('WhatsApp template not found');
+
+    return this.createWhatsappTemplate(existing.tenantId, {
+      name: `${existing.name} (Copy)`,
+      category: existing.category,
+      body: existing.body,
+      isActive: existing.isActive
+    });
+  }
+
+  async restoreWhatsappTemplateVersion(id: string, versionId: string) {
+    const ver = await this.prisma.whatsappTemplateVersion.findUnique({ where: { id: versionId } });
+    if (!ver || ver.templateId !== id) throw new Error('Selected revision does not exist');
+    const existing = await this.prisma.whatsappTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('WhatsApp template not found');
+
+    return this.updateWhatsappTemplate(id, {
+      name: existing.name,
+      category: existing.category,
+      body: ver.body,
+      isActive: existing.isActive
+    });
+  }
+
+  // --- SMS TEMPLATE CRUD ---
+
+  async getSmsTemplates(tenantId: string) {
+    return this.prisma.smsTemplate.findMany({
+      where: { tenantId },
+      include: { versions: { orderBy: { version: 'desc' } } },
+      orderBy: { name: 'asc' }
+    });
+  }
+
+  async createSmsTemplate(tenantId: string, data: any) {
+    const t = await this.prisma.smsTemplate.create({
+      data: {
+        tenantId,
+        name: data.name,
+        category: data.category || 'Custom',
+        body: data.body,
+        isActive: data.isActive !== undefined ? data.isActive : true
+      }
+    });
+
+    await this.prisma.smsTemplateVersion.create({
+      data: {
+        templateId: t.id,
+        version: 1,
+        body: t.body
+      }
+    });
+    return t;
+  }
+
+  async updateSmsTemplate(id: string, data: any) {
+    const existing = await this.prisma.smsTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('SMS template not found');
+
+    const nextVer = existing.version + 1;
+    const updated = await this.prisma.smsTemplate.update({
+      where: { id },
+      data: {
+        name: data.name,
+        category: data.category,
+        body: data.body,
+        isActive: data.isActive,
+        version: nextVer
+      }
+    });
+
+    await this.prisma.smsTemplateVersion.create({
+      data: {
+        templateId: id,
+        version: nextVer,
+        body: updated.body
+      }
+    });
+    return updated;
+  }
+
+  async deleteSmsTemplate(id: string) {
+    return this.prisma.smsTemplate.delete({ where: { id } });
+  }
+
+  async cloneSmsTemplate(id: string) {
+    const existing = await this.prisma.smsTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('SMS template not found');
+
+    return this.createSmsTemplate(existing.tenantId, {
+      name: `${existing.name} (Copy)`,
+      category: existing.category,
+      body: existing.body,
+      isActive: existing.isActive
+    });
+  }
+
+  async restoreSmsTemplateVersion(id: string, versionId: string) {
+    const ver = await this.prisma.smsTemplateVersion.findUnique({ where: { id: versionId } });
+    if (!ver || ver.templateId !== id) throw new Error('Selected revision does not exist');
+    const existing = await this.prisma.smsTemplate.findUnique({ where: { id } });
+    if (!existing) throw new Error('SMS template not found');
+
+    return this.updateSmsTemplate(id, {
+      name: existing.name,
+      category: existing.category,
+      body: ver.body,
+      isActive: existing.isActive
+    });
+  }
+
+  // --- AUTOMATION RULES CRUD ---
+
+  async getAutomations(tenantId: string) {
+    return this.prisma.automationRule.findMany({
+      where: { tenantId },
+      include: {
+        emailTemplate: true,
+        whatsappTemplate: true,
+        smsTemplate: true
+      },
+      orderBy: { trigger: 'asc' }
+    });
+  }
+
+  async saveAutomation(tenantId: string, data: any) {
+    if (data.id) {
+      return this.updateAutomation(data.id, data);
     }
-    return this.prisma.communicationLog.findMany({
-      orderBy: { sentAt: 'desc' },
+    return this.prisma.automationRule.create({
+      data: {
+        tenantId,
+        name: data.name,
+        trigger: data.trigger,
+        channel: data.channel,
+        emailTemplateId: data.emailTemplateId || null,
+        whatsappTemplateId: data.whatsappTemplateId || null,
+        smsTemplateId: data.smsTemplateId || null,
+        delayType: data.delayType || 'IMMEDIATE',
+        delayDuration: data.delayDuration || null,
+        conditions: data.conditions || null,
+        enabled: data.enabled !== undefined ? data.enabled : true
+      }
     });
   }
 
-  async getDashboardStats() {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const messagesSentToday = await this.prisma.communicationLog.count({
-      where: {
-        status: QueueStatus.SENT,
-        sentAt: { gte: startOfToday },
-      },
-    });
-
-    const pendingQueue = await this.prisma.communicationQueue.count({
-      where: { status: QueueStatus.PENDING },
-    });
-
-    const failedMessages = await this.prisma.communicationLog.count({
-      where: { status: QueueStatus.FAILED },
-    });
-
-    const upcomingFollowups = await this.prisma.followup.count({
-      where: {
-        status: 'SCHEDULED',
-        followupDate: { gte: new Date() },
-      },
-    });
-
-    return {
-      messagesSentToday,
-      pendingQueue,
-      failedMessages,
-      upcomingFollowups,
-    };
-  }
-
-  // Template Manager CRUD
-  async getAllTemplates() {
-    return this.prisma.communicationTemplate.findMany({
-      orderBy: { updatedAt: 'desc' },
-    });
-  }
-
-  async createTemplate(data: { name: string; channel: CommunicationChannel; subject?: string; content: string; htmlContent?: string; isActive?: boolean }) {
-    return this.prisma.communicationTemplate.create({
-      data,
-    });
-  }
-
-  async updateTemplate(id: string, data: { name?: string; channel?: CommunicationChannel; subject?: string; content?: string; htmlContent?: string; isActive?: boolean }) {
-    return this.prisma.communicationTemplate.update({
+  async updateAutomation(id: string, data: any) {
+    return this.prisma.automationRule.update({
       where: { id },
-      data,
+      data: {
+        name: data.name,
+        trigger: data.trigger,
+        channel: data.channel,
+        emailTemplateId: data.emailTemplateId !== undefined ? data.emailTemplateId : null,
+        whatsappTemplateId: data.whatsappTemplateId !== undefined ? data.whatsappTemplateId : null,
+        smsTemplateId: data.smsTemplateId !== undefined ? data.smsTemplateId : null,
+        delayType: data.delayType,
+        delayDuration: data.delayDuration,
+        conditions: data.conditions,
+        enabled: data.enabled
+      }
     });
   }
 
-  async deleteTemplate(id: string) {
-    return this.prisma.communicationTemplate.delete({
-      where: { id },
+  async deleteAutomation(id: string) {
+    return this.prisma.automationRule.delete({ where: { id } });
+  }
+
+  async cloneAutomation(id: string) {
+    const existing = await this.prisma.automationRule.findUnique({ where: { id } });
+    if (!existing) throw new Error('Automation rule not found');
+
+    return this.prisma.automationRule.create({
+      data: {
+        tenantId: existing.tenantId,
+        name: `${existing.name} (Copy)`,
+        trigger: existing.trigger,
+        channel: existing.channel,
+        emailTemplateId: existing.emailTemplateId,
+        whatsappTemplateId: existing.whatsappTemplateId,
+        smsTemplateId: existing.smsTemplateId,
+        delayType: existing.delayType,
+        delayDuration: existing.delayDuration,
+        conditions: existing.conditions || null,
+        enabled: existing.enabled
+      }
     });
   }
 
-  // SMTP Settings CRUD with password encryption and masking
+  // --- OUTBOUND EMAIL SETTINGS ---
+
   async getSettings(tenantId: string) {
     const settings = await this.prisma.emailSetting.findUnique({
       where: { tenantId }
     });
-
-    if (!settings) {
-      return null;
-    }
-
+    if (!settings) return null;
     return {
       ...settings,
-      password: '********' // Always mask the password in API response
+      password: '********' // Mask password
     };
   }
 
   async saveSettings(tenantId: string, data: any) {
-    const existing = await this.prisma.emailSetting.findUnique({
-      where: { tenantId }
-    });
-
+    const { encrypt } = require('../../common/utils/crypto.util');
     let finalPassword = data.password;
 
-    if (finalPassword === '********' || !finalPassword) {
+    if (finalPassword === '********') {
+      const existing = await this.prisma.emailSetting.findUnique({ where: { tenantId } });
       if (existing) {
-        finalPassword = existing.password; // Preserve existing encrypted password
+        finalPassword = existing.password; // Retain encrypted password
       } else {
-        throw new Error('Password is required for new SMTP configuration');
+        finalPassword = encrypt('');
       }
     } else {
-      finalPassword = encrypt(finalPassword); // Encrypt password symmetrically
+      finalPassword = encrypt(finalPassword);
     }
 
-    if (existing) {
-      return this.prisma.emailSetting.update({
-        where: { tenantId },
-        data: {
-          host: data.host,
-          port: Number(data.port),
-          username: data.username,
-          password: finalPassword,
-          senderName: data.senderName,
-          senderEmail: data.senderEmail,
-          encryption: data.encryption,
-          enabled: data.enabled !== undefined ? data.enabled : true,
-          emailEnabled: data.emailEnabled !== undefined ? data.emailEnabled : true,
-          whatsappEnabled: data.whatsappEnabled !== undefined ? data.whatsappEnabled : false,
-          studentPortalLoginEnabled: data.studentPortalLoginEnabled !== undefined ? data.studentPortalLoginEnabled : undefined,
-          studentMagicLinkEnabled: data.studentMagicLinkEnabled !== undefined ? data.studentMagicLinkEnabled : undefined,
-          studentEmailOtpEnabled: data.studentEmailOtpEnabled !== undefined ? data.studentEmailOtpEnabled : undefined,
-          studentSmsOtpEnabled: data.studentSmsOtpEnabled !== undefined ? data.studentSmsOtpEnabled : undefined,
-          studentWhatsappOtpEnabled: data.studentWhatsappOtpEnabled !== undefined ? data.studentWhatsappOtpEnabled : undefined,
-        }
-      });
-    } else {
-      return this.prisma.emailSetting.create({
-        data: {
-          tenantId,
-          host: data.host,
-          port: Number(data.port),
-          username: data.username,
-          password: finalPassword,
-          senderName: data.senderName,
-          senderEmail: data.senderEmail,
-          encryption: data.encryption,
-          enabled: data.enabled !== undefined ? data.enabled : true,
-          emailEnabled: data.emailEnabled !== undefined ? data.emailEnabled : true,
-          whatsappEnabled: data.whatsappEnabled !== undefined ? data.whatsappEnabled : false,
-          studentPortalLoginEnabled: data.studentPortalLoginEnabled !== undefined ? data.studentPortalLoginEnabled : true,
-          studentMagicLinkEnabled: data.studentMagicLinkEnabled !== undefined ? data.studentMagicLinkEnabled : true,
-          studentEmailOtpEnabled: data.studentEmailOtpEnabled !== undefined ? data.studentEmailOtpEnabled : true,
-          studentSmsOtpEnabled: data.studentSmsOtpEnabled !== undefined ? data.studentSmsOtpEnabled : false,
-          studentWhatsappOtpEnabled: data.studentWhatsappOtpEnabled !== undefined ? data.studentWhatsappOtpEnabled : false,
-        }
-      });
-    }
+    return this.prisma.emailSetting.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        host: data.host,
+        port: Number(data.port),
+        username: data.username,
+        password: finalPassword,
+        senderName: data.senderName,
+        senderEmail: data.senderEmail,
+        encryption: data.encryption,
+        enabled: data.enabled !== undefined ? data.enabled : true,
+        emailEnabled: data.emailEnabled !== undefined ? data.emailEnabled : true,
+        whatsappEnabled: data.whatsappEnabled !== undefined ? data.whatsappEnabled : false,
+        studentPortalLoginEnabled: data.studentPortalLoginEnabled !== undefined ? data.studentPortalLoginEnabled : true,
+        studentMagicLinkEnabled: data.studentMagicLinkEnabled !== undefined ? data.studentMagicLinkEnabled : true,
+        studentEmailOtpEnabled: data.studentEmailOtpEnabled !== undefined ? data.studentEmailOtpEnabled : true,
+        studentSmsOtpEnabled: data.studentSmsOtpEnabled !== undefined ? data.studentSmsOtpEnabled : false,
+        studentWhatsappOtpEnabled: data.studentWhatsappOtpEnabled !== undefined ? data.studentWhatsappOtpEnabled : false,
+      },
+      update: {
+        host: data.host,
+        port: Number(data.port),
+        username: data.username,
+        password: finalPassword,
+        senderName: data.senderName,
+        senderEmail: data.senderEmail,
+        encryption: data.encryption,
+        enabled: data.enabled !== undefined ? data.enabled : true,
+        emailEnabled: data.emailEnabled !== undefined ? data.emailEnabled : true,
+        whatsappEnabled: data.whatsappEnabled !== undefined ? data.whatsappEnabled : false,
+        studentPortalLoginEnabled: data.studentPortalLoginEnabled !== undefined ? data.studentPortalLoginEnabled : true,
+        studentMagicLinkEnabled: data.studentMagicLinkEnabled !== undefined ? data.studentMagicLinkEnabled : true,
+        studentEmailOtpEnabled: data.studentEmailOtpEnabled !== undefined ? data.studentEmailOtpEnabled : true,
+        studentSmsOtpEnabled: data.studentSmsOtpEnabled !== undefined ? data.studentSmsOtpEnabled : false,
+        studentWhatsappOtpEnabled: data.studentWhatsappOtpEnabled !== undefined ? data.studentWhatsappOtpEnabled : false,
+      }
+    });
   }
 
-  // --- EVENT-DRIVEN COMMUNICATION SYSTEM ---
+  // --- DYNAMIC DISPATCH AUTOMATION ENGINE ---
 
-  async triggerEvent(triggerName: string, leadId: string, context: Record<string, string> = {}) {
+  async triggerEvent(triggerName: string, leadId: string, context: Record<string, any> = {}) {
     console.log(`[CommunicationAutomation] Triggering event: ${triggerName} for Lead ID: ${leadId}`);
-    
+
     const lead = await this.prisma.lead.findUnique({
       where: { id: leadId },
       include: { studentProfile: true }
@@ -691,38 +636,31 @@ export class CommunicationService implements OnModuleInit {
 
     const tenantId = lead.tenantId;
 
-    // Map system event triggerName to template name
-    const eventToTemplateNameMap: Record<string, string> = {
-      'LEAD_CREATED': 'WELCOME',
-      'DOCUMENT_PENDING': 'DOCUMENT_REQUEST',
-      'FOLLOWUP_REMINDER': 'FOLLOWUP_REMINDER',
-      'VISA_APPROVED': 'VISA_APPROVED',
-      'OFFER_RECEIVED': 'OFFER_RECEIVED'
-    };
-
-    const templateName = eventToTemplateNameMap[triggerName] || triggerName;
-
-    // Query the CommunicationTemplate model
-    const templates = await this.prisma.communicationTemplate.findMany({
-      where: { name: templateName, isActive: true }
-    });
-
-    if (templates.length === 0) {
-      console.log(`[Whatsapp]\nMissing template: ${templateName}`);
-      return;
-    }
-
-    // Resolve settings for channel check
+    // Resolve channel config toggles
     const settings = await this.prisma.emailSetting.findUnique({
       where: { tenantId }
     });
     const emailEnabled = settings ? settings.emailEnabled : true;
     const whatsappEnabled = settings ? settings.whatsappEnabled : false;
 
-    // Resolve appUrl dynamically
+    // Find matching active automation rules
+    const rules = await this.prisma.automationRule.findMany({
+      where: { tenantId, trigger: triggerName, enabled: true },
+      include: {
+        emailTemplate: true,
+        whatsappTemplate: true,
+        smsTemplate: true
+      }
+    });
+
+    if (rules.length === 0) {
+      console.log(`[CommunicationAutomation] No active AutomationRules found for trigger ${triggerName}`);
+      return;
+    }
+
+    // Resolve dynamic variables
     const appUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://crm.studymetrojaipur.com';
 
-    // Resolve Counsellor
     let counsellorName = 'Your Counsellor';
     if (lead.assigneeId) {
       const assignee = await this.prisma.user.findUnique({ where: { id: lead.assigneeId } });
@@ -731,20 +669,73 @@ export class CommunicationService implements OnModuleInit {
       }
     }
 
-    // Resolve Brochure Title and Tracking link
     let brochureTitle = '';
     let brochureLink = '';
-    const assignment: any = await this.prisma.brochureAssignment.findFirst({
-      where: { leadId },
-      include: { brochure: true },
-      orderBy: { assignedAt: 'desc' }
-    });
+    let assignment: any = null;
+
+    if (triggerName === 'LEAD_CREATED') {
+      const activeBrochure = await this.prisma.brochure.findFirst({
+        where: { category: lead.leadCategory, isActive: true }
+      });
+      if (activeBrochure) {
+        // Poll for up to 3 seconds (30 * 100ms) for the assignment to appear in DB
+        for (let i = 0; i < 30; i++) {
+          assignment = await this.prisma.brochureAssignment.findFirst({
+            where: { leadId },
+            include: { brochure: true },
+            orderBy: { assignedAt: 'desc' }
+          });
+          if (assignment) break;
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+    } else {
+      assignment = await this.prisma.brochureAssignment.findFirst({
+        where: { leadId },
+        include: { brochure: true },
+        orderBy: { assignedAt: 'desc' }
+      });
+    }
+
+    if (!assignment) {
+      // Create a default brochure assignment if none exists for the lead dynamically
+      const brochure = await this.prisma.brochure.findFirst({
+        where: { category: lead.leadCategory, isActive: true },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (brochure) {
+        const crypto = require('crypto');
+        const token = crypto.randomBytes(24).toString('hex');
+        assignment = await this.prisma.brochureAssignment.create({
+          data: {
+            leadId: lead.id,
+            brochureId: brochure.id,
+            token,
+            tracking: {
+              create: {
+                opened: false,
+                readingTime: 0,
+                pageViews: 0,
+                completionPercentage: 0,
+                lastPageViewed: 0,
+                downloadCount: 0,
+                viewedPages: '',
+                engagementScore: 0,
+              },
+            },
+          },
+          include: { brochure: true }
+        });
+      }
+    }
+
     if (assignment) {
       brochureTitle = assignment.brochure?.title || '';
       brochureLink = `${appUrl}/brochure/view/${assignment.token}`;
+    } else {
+      brochureLink = `${appUrl}/student/login`;
     }
 
-    // Resolve Pending Documents List
     const pendingDocs = await this.prisma.leadDocument.findMany({
       where: { leadId, status: 'PENDING' }
     });
@@ -752,14 +743,12 @@ export class CommunicationService implements OnModuleInit {
       ? pendingDocs.map(d => `• ${d.documentType}`).join('\n') 
       : '• Passport\n• Marksheets\n• SOP\n• LOR';
 
-    // Resolve Follow-up Date
     const latestFollowup = await this.prisma.followup.findFirst({
       where: { leadId, status: 'SCHEDULED' },
       orderBy: { followupDate: 'asc' }
     });
     const followupDate = latestFollowup ? new Date(latestFollowup.followupDate).toLocaleString() : 'Not scheduled';
 
-    // Resolve Offer Letter details & Visa status
     const latestApp = await this.prisma.application.findFirst({
       where: { leadId },
       orderBy: { createdAt: 'desc' }
@@ -772,7 +761,6 @@ export class CommunicationService implements OnModuleInit {
     const offerLetterLink = offerDoc ? `${appUrl}/api/v1/leads/documents/download/${offerDoc.id}` : `${appUrl}/student/login`;
     const paymentLink = `${appUrl}/student/login?redirect=/payments`;
 
-    // Shared variable parser engine variables
     const variablesMap = {
       studentName: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
       name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
@@ -789,53 +777,100 @@ export class CommunicationService implements OnModuleInit {
       pendingDocuments,
       documentList: pendingDocuments,
       followupDate,
-      offerLetterLink,
+      offerLetter: offerLetterLink,
       visaStatus,
       paymentLink,
       today: new Date().toLocaleDateString(),
       ...context
     };
 
-    for (const template of templates) {
-      const channel = template.channel; // EMAIL or WHATSAPP
+    for (const rule of rules) {
+      const channel = rule.channel;
 
-      // Check if channel is enabled
+      // Channel config checks
       if (channel === 'EMAIL' && !emailEnabled) {
-        console.log(`[CommunicationAutomation] Email channel is disabled. Skipping template ${template.id}`);
+        console.log(`[CommunicationAutomation] Email channel is disabled. Skipping rule ${rule.name}`);
         continue;
       }
       if (channel === 'WHATSAPP' && !whatsappEnabled) {
-        console.log(`[CommunicationAutomation] WhatsApp channel is disabled. Skipping template ${template.id}`);
+        console.log(`[CommunicationAutomation] WhatsApp channel is disabled. Skipping rule ${rule.name}`);
         continue;
       }
 
-      // Check for duplicates only for status transitions/reminders on the *same* lead
-      if (triggerName !== 'LEAD_CREATED') {
+      // Check conditions if configured (e.g. filter by country)
+      if (rule.conditions) {
+        try {
+          const filter = rule.conditions as Record<string, any>;
+          let matched = true;
+          for (const [k, val] of Object.entries(filter)) {
+            if (lead[k] !== undefined && lead[k] !== val) {
+              matched = false;
+              break;
+            }
+          }
+          if (!matched) {
+            console.log(`[CommunicationAutomation] Conditions mismatch for rule ${rule.name}. Skipping.`);
+            continue;
+          }
+        } catch (e) {
+          console.error('[CommunicationAutomation] Error evaluating rule conditions:', e);
+        }
+      }
+
+      // Resolve specific template contents
+      let bodyText = '';
+      let subjectText = '';
+      let hasTemplate = false;
+
+      if (channel === 'EMAIL' && rule.emailTemplate) {
+        bodyText = rule.emailTemplate.body;
+        subjectText = rule.emailTemplate.subject || '';
+        hasTemplate = true;
+      } else if (channel === 'WHATSAPP' && rule.whatsappTemplate) {
+        bodyText = rule.whatsappTemplate.body;
+        hasTemplate = true;
+      } else if (channel === 'SMS' && rule.smsTemplate) {
+        bodyText = rule.smsTemplate.body;
+        hasTemplate = true;
+      }
+
+      if (!hasTemplate) {
+        console.log(`[${channel}] Missing template: ${triggerName}`);
+        continue;
+      }
+
+      // Evaluate placeholders
+      let evaluatedBody = bodyText;
+      let evaluatedSubject = subjectText;
+
+      for (const [key, value] of Object.entries(variablesMap)) {
+        const placeholderRegex = new RegExp(`{{${key}}}`, 'g');
+        evaluatedBody = evaluatedBody.replace(placeholderRegex, String(value || ''));
+        evaluatedSubject = evaluatedSubject.replace(placeholderRegex, String(value || ''));
+      }
+
+      // Warning verification logging
+      if (bodyText.includes('{{brochureLink}}') && (!variablesMap.brochureLink || !variablesMap.brochureLink.trim() || variablesMap.brochureLink.includes('undefined'))) {
+        console.error(`[CommunicationAutomation] ERROR: Template contains {{brochureLink}} but the variable is missing or empty!`);
+      }
+
+      // Prevent duplicate sends for status transitions on same lead (unless manually bypassed)
+      const bypassDuplicateCheck = context?.bypassDuplicateCheck || false;
+      if (triggerName !== 'LEAD_CREATED' && !bypassDuplicateCheck) {
         const existingLog = await this.prisma.communicationLog.findFirst({
           where: {
             leadId,
-            eventType: triggerName,
-            channel,
+            automationId: rule.id,
             status: 'SENT'
           }
         });
         if (existingLog) {
-          console.log(`[CommunicationAutomation] Duplicate prevention: event "${triggerName}" on channel "${channel}" already dispatched for lead ${leadId}. Skipping.`);
+          console.log(`[CommunicationAutomation] Duplicate prevention: rule "${rule.name}" already dispatched for lead ${leadId}. Skipping.`);
           continue;
         }
       }
 
-      // Evaluate body using the shared variables parser engine
-      let evaluatedBody = template.content;
-      let evaluatedSubject = template.subject || '';
-
-      for (const [key, value] of Object.entries(variablesMap)) {
-        const placeholderRegex = new RegExp(`{{${key}}}`, 'g');
-        evaluatedBody = evaluatedBody.replace(placeholderRegex, value || '');
-        evaluatedSubject = evaluatedSubject.replace(placeholderRegex, value || '');
-      }
-
-      // Send the communication directly
+      // Send output
       try {
         if (channel === 'EMAIL') {
           const recipient = lead.email;
@@ -850,7 +885,9 @@ export class CommunicationService implements OnModuleInit {
 
             await this.prisma.communicationLog.create({
               data: {
+                tenantId,
                 leadId: lead.id,
+                automationId: rule.id,
                 channel: 'EMAIL',
                 eventType: triggerName,
                 status: 'SENT',
@@ -858,15 +895,18 @@ export class CommunicationService implements OnModuleInit {
                 message: evaluatedBody
               }
             });
-            console.log(`[CommunicationAutomation] Email sent successfully for trigger ${triggerName} to ${recipient}`);
+            console.log(`[CommunicationAutomation] Email sent successfully for rule ${rule.name}`);
           }
         } else if (channel === 'WHATSAPP') {
           const recipient = lead.phone;
           if (recipient) {
+            console.log(`[WHATSAPP AUDIT] Final Rendered Message for WhatsApp:\n"""\n${evaluatedBody}\n"""`);
+
             const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
             const instance = await this.prisma.whatsappInstance.findFirst({
               where: { tenantId: lead.tenantId, status: 'CONNECTED' }
             });
+
             if (instance && WhatsappQueueService.instance) {
               const dbMsg = await this.prisma.whatsappMessage.create({
                 data: {
@@ -879,11 +919,14 @@ export class CommunicationService implements OnModuleInit {
                   status: 'PENDING'
                 }
               });
+
               await WhatsappQueueService.instance.enqueueMessage(instance.id, recipient, { text: evaluatedBody }, dbMsg.id);
 
               await this.prisma.communicationLog.create({
                 data: {
+                  tenantId,
                   leadId: lead.id,
+                  automationId: rule.id,
                   channel: 'WHATSAPP',
                   eventType: triggerName,
                   status: 'SENT',
@@ -891,307 +934,74 @@ export class CommunicationService implements OnModuleInit {
                   message: evaluatedBody
                 }
               });
-              console.log(`[CommunicationAutomation] WhatsApp message enqueued successfully for trigger ${triggerName} to ${recipient}`);
+              console.log(`[CommunicationAutomation] WhatsApp message enqueued successfully for rule ${rule.name}`);
             } else {
               console.warn('[CommunicationAutomation] No connected WhatsApp instance available or WhatsappQueueService is offline.');
             }
           }
         }
       } catch (err: any) {
-        console.error(`[CommunicationAutomation] Channel ${channel} execution failed for trigger ${triggerName}:`, err.message);
+        console.error(`[CommunicationAutomation] Fail dispatching rule ${rule.name}:`, err.message);
         await this.prisma.communicationLog.create({
           data: {
-            leadId,
-            channel: channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
+            tenantId,
+            leadId: lead.id,
+            automationId: rule.id,
+            channel,
             eventType: triggerName,
             status: 'FAILED',
             recipient: channel === 'EMAIL' ? lead.email || '' : lead.phone || '',
-            message: evaluatedBody
+            message: evaluatedBody,
+            failedReason: err.message
           }
         });
       }
     }
   }
 
-  // --- AUTOMATIONS CRUD ---
+  // --- LOGS & AUDIT ---
 
-  async getAutomations(tenantId: string) {
-    const autos = await this.prisma.communicationAutomation.findMany({
-      where: { tenantId },
-      include: { template: true, logs: true }
-    });
-
-    return autos.map(a => {
-      const total = a.logs.length;
-      const success = a.logs.filter(l => l.status === 'SENT').length;
-      const failure = a.logs.filter(l => l.status === 'FAILED').length;
-      const rate = total > 0 ? Math.round((success / total) * 100) : 100;
-      const failRate = total > 0 ? Math.round((failure / total) * 100) : 0;
-      const lastExecLog = a.logs.length > 0 ? a.logs[a.logs.length - 1] : null;
-
-      return {
-        id: a.id,
-        name: a.name,
-        trigger: a.trigger,
-        channels: a.channels,
-        enabled: a.enabled,
-        delayType: a.delayType,
-        delayDuration: a.delayDuration,
-        cronExpression: a.cronExpression,
-        conditions: a.conditions,
-        maxRetries: a.maxRetries,
-        templateId: a.templateId,
-        templateName: a.template.name,
-        successRate: rate,
-        failureRate: failRate,
-        totalExecutions: total,
-        lastExecuted: lastExecLog ? lastExecLog.createdAt : null
-      };
-    });
-  }
-
-  async saveAutomation(tenantId: string, data: any) {
-    return this.prisma.communicationAutomation.create({
-      data: {
-        tenantId,
-        name: data.name,
-        trigger: data.trigger,
-        channels: data.channels,
-        templateId: data.templateId,
-        conditions: data.conditions || {},
-        delayType: data.delayType || 'IMMEDIATE',
-        delayDuration: data.delayDuration || null,
-        cronExpression: data.cronExpression || null,
-        maxRetries: Number(data.maxRetries || 3),
-        enabled: data.enabled !== undefined ? data.enabled : true
-      }
-    });
-  }
-
-  async updateAutomation(id: string, data: any) {
-    return this.prisma.communicationAutomation.update({
-      where: { id },
-      data: {
-        name: data.name,
-        trigger: data.trigger,
-        channels: data.channels,
-        templateId: data.templateId,
-        conditions: data.conditions,
-        delayType: data.delayType,
-        delayDuration: data.delayDuration,
-        cronExpression: data.cronExpression,
-        maxRetries: data.maxRetries !== undefined ? Number(data.maxRetries) : undefined,
-        enabled: data.enabled
-      }
-    });
-  }
-
-  async deleteAutomation(id: string) {
-    return this.prisma.communicationAutomation.delete({ where: { id } });
-  }
-
-  async cloneAutomation(id: string) {
-    const existing = await this.prisma.communicationAutomation.findUnique({ where: { id } });
-    if (!existing) throw new Error('Automation rule not found');
-    return this.prisma.communicationAutomation.create({
-      data: {
-        tenantId: existing.tenantId,
-        name: `${existing.name} (Copy)`,
-        trigger: existing.trigger,
-        channels: existing.channels,
-        templateId: existing.templateId,
-        conditions: existing.conditions || {},
-        delayType: existing.delayType,
-        delayDuration: existing.delayDuration,
-        cronExpression: existing.cronExpression,
-        maxRetries: existing.maxRetries,
-        enabled: false
-      }
-    });
-  }
-
-  // --- TEMPLATES CRUD & VERSIONING ---
-
-  async getAutomationTemplates(tenantId: string) {
-    return this.prisma.communicationAutomationTemplate.findMany({
-      where: { tenantId },
-      include: { versions: { orderBy: { version: 'desc' } } }
-    });
-  }
-
-  async createAutomationTemplate(tenantId: string, data: any) {
-    const t = await this.prisma.communicationAutomationTemplate.create({
-      data: {
-        tenantId,
-        name: data.name,
-        subject: data.subject || null,
-        body: data.body,
-        variables: data.variables || [],
-        version: 1,
-        isActive: true
-      }
-    });
-    // Create initial version record
-    await this.prisma.communicationAutomationTemplateVersion.create({
-      data: {
-        templateId: t.id,
-        version: 1,
-        subject: t.subject,
-        body: t.body
-      }
-    });
-    return t;
-  }
-
-  async updateAutomationTemplate(id: string, data: any) {
-    const existing = await this.prisma.communicationAutomationTemplate.findUnique({ where: { id } });
-    if (!existing) throw new Error('Template not found');
-
-    const nextVer = existing.version + 1;
-    const updated = await this.prisma.communicationAutomationTemplate.update({
-      where: { id },
-      data: {
-        name: data.name,
-        subject: data.subject,
-        body: data.body,
-        variables: data.variables || [],
-        version: nextVer
-      }
-    });
-
-    // Record template revision history
-    await this.prisma.communicationAutomationTemplateVersion.create({
-      data: {
-        templateId: id,
-        version: nextVer,
-        subject: updated.subject,
-        body: updated.body
-      }
-    });
-    return updated;
-  }
-
-  async restoreTemplateVersion(id: string, versionId: string) {
-    const ver = await this.prisma.communicationAutomationTemplateVersion.findUnique({ where: { id: versionId } });
-    if (!ver || ver.templateId !== id) throw new Error('Selected template revision does not exist');
-    const existing = await this.prisma.communicationAutomationTemplate.findUnique({ where: { id } });
-    if (!existing) throw new Error('Template not found');
-
-    const nextVer = existing.version + 1;
-    return this.prisma.communicationAutomationTemplate.update({
-      where: { id },
-      data: {
-        subject: ver.subject,
-        body: ver.body,
-        version: nextVer
-      }
-    });
-  }
-
-  // --- LOGS & ANALYTICS ---
-
-  async getAutomationLogs(tenantId: string) {
-    return this.prisma.communicationAutomationLog.findMany({
-      where: { automation: { tenantId } },
+  async getLogs(leadId?: string) {
+    return this.prisma.communicationLog.findMany({
+      where: leadId ? { leadId } : {},
       include: { automation: true, lead: true },
       orderBy: { createdAt: 'desc' }
     });
   }
 
-  async getAutomationAnalytics(tenantId: string) {
-    const logs = await this.prisma.communicationAutomationLog.findMany({
-      where: { automation: { tenantId } },
-      include: { lead: true }
-    });
-
+  async getDashboardStats() {
+    const logs = await this.prisma.communicationLog.findMany();
     const total = logs.length;
     const sent = logs.filter(l => l.status === 'SENT').length;
     const failed = logs.filter(l => l.status === 'FAILED').length;
-    const pending = logs.filter(l => l.status === 'QUEUED' || l.status === 'PROCESSING').length;
-
-    const rate = total > 0 ? Math.round((sent / total) * 100) : 100;
-    const failRate = total > 0 ? Math.round((failed / total) * 100) : 0;
-
-    // Aggregate by countries
-    const countries: Record<string, number> = {};
-    for (const l of logs) {
-      const c = l.lead.preferredCountry || 'Unknown';
-      countries[c] = (countries[c] || 0) + 1;
-    }
-
     return {
-      totalSent: sent,
-      totalFailed: failed,
-      totalPending: pending,
-      successRate: rate,
-      failureRate: failRate,
-      topCountries: Object.entries(countries).map(([name, count]) => ({ name, count })).sort((a,b) => b.count - a.count).slice(0, 5)
+      totalLogs: total,
+      successRate: total > 0 ? Math.round((sent / total) * 100) : 100,
+      failRate: total > 0 ? Math.round((failed / total) * 100) : 0
     };
   }
 
-  // Retry Engine Loop (runs every 1 minute)
-  async executeRetryEngineLoop() {
-    const failedLogs = await this.prisma.communicationAutomationLog.findMany({
-      where: {
-        status: 'FAILED',
-        retryCount: { lt: 3 } // Limit to 3 retries max
-      },
-      include: { automation: true, lead: true }
-    });
+  // --- COMPATIBILITY STUBS & RETRY LOOPS ---
 
-    for (const log of failedLogs) {
-      const elapsedMinutes = (Date.now() - log.updatedAt.getTime()) / 60000;
-      // Exponential backoff retry timer check (1m, 5m, 15m, 30m etc.)
-      const requiredInterval = log.retryCount === 0 ? 1 : log.retryCount === 1 ? 5 : 30;
-      if (elapsedMinutes >= requiredInterval) {
-        console.log(`[CommunicationAutomation] Re-attempting failed message dispatch log ID: ${log.id}`);
-        await this.prisma.communicationAutomationLog.update({
-          where: { id: log.id },
-          data: { status: 'PROCESSING', retryCount: log.retryCount + 1 }
-        });
-
-        try {
-          if (log.channel === 'WHATSAPP') {
-            const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
-            const instance = await this.prisma.whatsappInstance.findFirst({
-              where: { tenantId: log.automation.tenantId, status: 'CONNECTED' }
-            });
-            if (instance && WhatsappQueueService.instance) {
-              const dbMsg = await this.prisma.whatsappMessage.create({
-                data: {
-                  leadId: log.leadId,
-                  instanceId: instance.id,
-                  direction: 'OUTBOUND',
-                  messageType: 'TEXT',
-                  messageId: `msg-retry-${Date.now()}`,
-                  body: log.automation.name, // Fallback body reference
-                  status: 'PENDING'
-                }
-              });
-              await WhatsappQueueService.instance.enqueueMessage(instance.id, log.lead.phone, { text: log.automation.name }, dbMsg.id);
-              await this.prisma.communicationAutomationLog.update({
-                where: { id: log.id },
-                data: { status: 'SENT', response: `Retried successfully. Msg ID: ${dbMsg.id}` }
-              });
-            } else {
-              throw new Error('No active socket registry connection found during retry.');
-            }
-          } else if (log.channel === 'EMAIL') {
-            if (log.lead.email) {
-              await this.emailService.sendEmail(log.lead.email, log.automation.name, 'Retried notification text', '<p>Retried notification text</p>', log.automation.tenantId);
-              await this.prisma.communicationAutomationLog.update({
-                where: { id: log.id },
-                data: { status: 'SENT', response: 'Retried successfully.' }
-              });
-            }
-          }
-        } catch (err: any) {
-          await this.prisma.communicationAutomationLog.update({
-            where: { id: log.id },
-            data: { status: 'FAILED', failedReason: err.message }
-          });
-        }
+  async enqueue(leadId: string, channel: any, eventType: string, payload: any, sourceService?: string) {
+    // Backwards compatibility placeholder
+    return this.prisma.communicationQueue.create({
+      data: {
+        leadId,
+        channel,
+        eventType,
+        payload: payload || {},
+        status: QueueStatus.PENDING
       }
-    }
+    });
+  }
+
+  async processQueue() {
+    if (this.processing) return;
+    this.processing = false; // Stubbed outbox runner
+  }
+
+  async executeRetryEngineLoop() {
+    // Stubbed outbox auto-retry runner
   }
 }

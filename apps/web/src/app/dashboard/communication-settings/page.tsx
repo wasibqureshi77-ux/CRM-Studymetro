@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../../lib/api';
 import io from 'socket.io-client';
 import QRCode from 'qrcode';
+import Link from 'next/link';
 
 export default function CommunicationSettingsPage() {
   const [host, setHost] = useState('');
@@ -43,6 +44,7 @@ export default function CommunicationSettingsPage() {
   const [sendingTest, setSendingTest] = useState(false);
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
   const [testRecipient, setTestRecipient] = useState('');
+  const [missingAutomations, setMissingAutomations] = useState(false);
 
 
 
@@ -91,6 +93,22 @@ export default function CommunicationSettingsPage() {
         setTermsConditions(pSetting.termsConditions || '');
         setFooterText(pSetting.footerText || '');
         setSocialLinks(pSetting.socialLinks || { facebook: '', twitter: '', instagram: '' });
+      }
+
+      // Fetch templates to check if default templates exist and are active
+      try {
+        const templates = await api.get('/api/v1/communication/templates');
+        if (Array.isArray(templates)) {
+          const hasWelcome = templates.some(t => t.name === 'WELCOME' && t.isActive);
+          const hasDocRequest = templates.some(t => t.name === 'DOCUMENT_REQUEST' && t.isActive);
+          const hasFollowup = templates.some(t => t.name === 'FOLLOWUP_REMINDER' && t.isActive);
+          setMissingAutomations(!hasWelcome || !hasDocRequest || !hasFollowup);
+        } else {
+          setMissingAutomations(true);
+        }
+      } catch (tErr) {
+        console.error('Failed to load templates check:', tErr);
+        setMissingAutomations(true);
       }
     } catch (err: any) {
       console.error('Failed to load settings', err);
@@ -249,6 +267,65 @@ export default function CommunicationSettingsPage() {
         </div>
       </div>
 
+      {/* Enterprise Communication Management Cards */}
+      <div>
+        <h2 style={{ fontSize: '11px', fontWeight: 700, margin: '0 0 12px 0', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
+          Enterprise Communication Module
+        </h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+          <Link href="/dashboard/communication-settings/email-templates" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div style={{
+              backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '16px',
+              cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '4px'
+            }} onMouseEnter={(e) => e.currentTarget.style.borderColor = '#3b82f6'} onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}>
+              <span style={{ fontSize: '20px' }}>✉️</span>
+              <div style={{ fontWeight: 700, fontSize: '13px' }}>Email Templates</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Manage layout and versions.</div>
+            </div>
+          </Link>
+          <Link href="/dashboard/communication-settings/whatsapp-templates" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div style={{
+              backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '16px',
+              cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '4px'
+            }} onMouseEnter={(e) => e.currentTarget.style.borderColor = '#25d366'} onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}>
+              <span style={{ fontSize: '20px' }}>💬</span>
+              <div style={{ fontWeight: 700, fontSize: '13px' }}>WhatsApp Templates</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Configure chat notifications.</div>
+            </div>
+          </Link>
+          <Link href="/dashboard/communication-settings/sms-templates" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div style={{
+              backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '16px',
+              cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '4px'
+            }} onMouseEnter={(e) => e.currentTarget.style.borderColor = '#d97706'} onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}>
+              <span style={{ fontSize: '20px' }}>📱</span>
+              <div style={{ fontWeight: 700, fontSize: '13px' }}>SMS Templates</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Integrations and stub settings.</div>
+            </div>
+          </Link>
+          <Link href="/dashboard/communication-settings/automation-rules" style={{ textDecoration: 'none', color: 'inherit', gridColumn: 'span 2' }}>
+            <div style={{
+              backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '16px',
+              cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '4px'
+            }} onMouseEnter={(e) => e.currentTarget.style.borderColor = '#7c3aed'} onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}>
+              <span style={{ fontSize: '20px' }}>⚙️</span>
+              <div style={{ fontWeight: 700, fontSize: '13px' }}>Automation Rules</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Map system hook triggers to template dispatches.</div>
+            </div>
+          </Link>
+          <Link href="/dashboard/communication-settings/communication-logs" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div style={{
+              backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '16px',
+              cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '4px'
+            }} onMouseEnter={(e) => e.currentTarget.style.borderColor = '#06b6d4'} onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}>
+              <span style={{ fontSize: '20px' }}>📊</span>
+              <div style={{ fontWeight: 700, fontSize: '13px' }}>Communication Logs</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>View sent history and errors.</div>
+            </div>
+          </Link>
+        </div>
+      </div>
+
       <div style={{ backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '24px' }}>
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
@@ -403,7 +480,7 @@ export default function CommunicationSettingsPage() {
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
               Connect self-hosted instances on your VPS using Baileys. Scan QR code to authenticate.
             </p>
-            <WhatsappIntegrationSection addToast={addToast} />
+            <WhatsappIntegrationSection addToast={addToast} missingAutomations={missingAutomations} />
           </div>
 
           {/* Student Portal Settings */}
@@ -617,7 +694,7 @@ export default function CommunicationSettingsPage() {
   );
 }
 
-function WhatsappIntegrationSection({ addToast }: { addToast: (type: 'success' | 'error', message: string) => void }) {
+function WhatsappIntegrationSection({ addToast, missingAutomations }: { addToast: (type: 'success' | 'error', message: string) => void; missingAutomations: boolean }) {
   const [instances, setInstances] = useState<any[]>([]);
   const [newInstanceName, setNewInstanceName] = useState('');
   const [loading, setLoading] = useState(true);
@@ -693,8 +770,6 @@ function WhatsappIntegrationSection({ addToast }: { addToast: (type: 'success' |
   const handleCreateInstance = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!newInstanceName.trim()) return;
-    
     console.log('Connect Button Clicked. Name:', newInstanceName);
     console.log('Sending request to POST /api/v1/whatsapp/connect...');
     
@@ -754,14 +829,16 @@ function WhatsappIntegrationSection({ addToast }: { addToast: (type: 'success' |
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Missing Automations warning and seed buttons */}
-      <div style={{ padding: '12px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '6px', fontSize: '12px', color: '#b45309' }}>
-        <strong>⚠️ Missing Automations Warning:</strong> If default templates or triggers (LEAD_CREATED, DOCUMENT_PENDING, FOLLOWUP_REMINDER) are missing, automations will fail.
-        <div style={{ marginTop: '8px' }}>
-          <button type="button" className="btn btn-xs" style={{ backgroundColor: '#d97706', color: '#fff' }} onClick={handleSeedDefaults}>
-            ⚡ Create Default Templates & Automations
-          </button>
+      {missingAutomations && (
+        <div style={{ padding: '12px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '6px', fontSize: '12px', color: '#b45309' }}>
+          <strong>⚠️ Missing Automations Warning:</strong> If default templates or triggers (LEAD_CREATED, DOCUMENT_PENDING, FOLLOWUP_REMINDER) are missing, automations will fail.
+          <div style={{ marginTop: '8px' }}>
+            <button type="button" className="btn btn-xs" style={{ backgroundColor: '#d97706', color: '#fff' }} onClick={handleSeedDefaults}>
+              ⚡ Create Default Templates & Automations
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={{ display: 'flex', gap: '8px' }}>
         <input
@@ -770,7 +847,6 @@ function WhatsappIntegrationSection({ addToast }: { addToast: (type: 'success' |
           placeholder="Friendly instance name (e.g. Dubai Support)"
           value={newInstanceName}
           onChange={(e) => setNewInstanceName(e.target.value)}
-          required
         />
         <button
           type="button"

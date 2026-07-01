@@ -4,7 +4,7 @@ import { EmailService } from './email.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole, CommunicationChannel } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { AuthenticatedRequest } from '../../common/interfaces/request.interface';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -15,206 +15,124 @@ export class CommunicationController {
     private readonly emailService: EmailService
   ) {}
 
-  @Get('templates')
-  @Roles(UserRole.SUPER_ADMIN)
-  async getAllTemplates() {
-    return this.communicationService.getAllTemplates();
-  }
+  // --- EMAIL TEMPLATES CRUD ---
 
-  @Post('templates')
-  @Roles(UserRole.SUPER_ADMIN)
-  async createTemplate(
-    @Body() body: { name: string; channel: CommunicationChannel; subject?: string; content: string; htmlContent?: string; isActive?: boolean }
-  ) {
-    return this.communicationService.createTemplate(body);
-  }
-
-  @Put('templates/:id')
-  @Roles(UserRole.SUPER_ADMIN)
-  async updateTemplate(
-    @Param('id') id: string,
-    @Body() body: { name?: string; channel?: CommunicationChannel; subject?: string; content?: string; htmlContent?: string; isActive?: boolean }
-  ) {
-    return this.communicationService.updateTemplate(id, body);
-  }
-
-  @Delete('templates/:id')
-  @Roles(UserRole.SUPER_ADMIN)
-  async deleteTemplate(@Param('id') id: string) {
-    return this.communicationService.deleteTemplate(id);
-  }
-
-  @Get('logs')
-  async getLogs(@Query('leadId') leadId?: string) {
-    return this.communicationService.getLogs(leadId);
-  }
-
-  @Get('logs/lead/:leadId')
-  async getLogsByLead(@Param('leadId') leadId: string) {
-    return this.communicationService.getLogs(leadId);
-  }
-
-  @Post('logs/:id/retry')
-  async retryFailedEmail(@Param('id') id: string) {
-    return this.communicationService.retryFailedEmail(id);
-  }
-
-  @Get('dashboard/stats')
-  async getDashboardStats() {
-    return this.communicationService.getDashboardStats();
-  }
-
-  @Post('enqueue')
-  async enqueue(
-    @Body() body: { leadId: string; channel: CommunicationChannel; eventType: string; payload?: any }
-  ) {
-    return this.communicationService.enqueue(body.leadId, body.channel, body.eventType, body.payload);
-  }
-
-  @Post('process')
-  async processQueue() {
-    await this.communicationService.processQueue();
-    return { success: true, message: 'Queue processing triggered manually' };
-  }
-
-  // SMTP Settings Endpoints
-  @Get('settings')
-  @Roles(UserRole.SUPER_ADMIN)
-  async getSettings(@Req() req: AuthenticatedRequest) {
+  @Get('templates/email')
+  async getEmailTemplates(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId || 'studymetro-global';
-    return this.communicationService.getSettings(tenantId);
+    return this.communicationService.getEmailTemplates(tenantId);
   }
 
-  @Post('settings')
+  @Post('templates/email')
   @Roles(UserRole.SUPER_ADMIN)
-  async saveSettings(@Req() req: AuthenticatedRequest, @Body() body: any) {
+  async createEmailTemplate(@Req() req: AuthenticatedRequest, @Body() body: any) {
     const tenantId = req.tenantId || 'studymetro-global';
-    return this.communicationService.saveSettings(tenantId, body);
+    return this.communicationService.createEmailTemplate(tenantId, body);
   }
 
-  @Post('settings/test-connection')
+  @Put('templates/email/:id')
   @Roles(UserRole.SUPER_ADMIN)
-  async testConnection(@Req() req: AuthenticatedRequest, @Body() body: any) {
-    const tenantId = req.tenantId || 'studymetro-global';
-    
-    // Resolve password if masked is submitted but existing exists
-    let passwordToTest = body.password;
-    if (passwordToTest === '********') {
-      const existing = await this.communicationService.getSettings(tenantId);
-      if (existing) {
-        const decryptedSettings = await this.prismaFindPassword(tenantId);
-        passwordToTest = decryptedSettings;
-      }
-    }
-
-    await this.emailService.testConnection({
-      host: body.host,
-      port: Number(body.port),
-      username: body.username,
-      password: passwordToTest,
-      encryption: body.encryption
-    });
-
-    return { success: true, message: 'SMTP connection verified successfully' };
+  async updateEmailTemplate(@Param('id') id: string, @Body() body: any) {
+    return this.communicationService.updateEmailTemplate(id, body);
   }
 
-  @Post('settings/test-email')
+  @Delete('templates/email/:id')
   @Roles(UserRole.SUPER_ADMIN)
-  async sendTestEmail(@Req() req: AuthenticatedRequest, @Body() body: any) {
-    const tenantId = req.tenantId || 'studymetro-global';
-
-    // Resolve password if masked is submitted but existing exists
-    let passwordToTest = body.password;
-    if (passwordToTest === '********') {
-      const existing = await this.communicationService.getSettings(tenantId);
-      if (existing) {
-        passwordToTest = await this.prismaFindPassword(tenantId);
-      }
-    }
-
-    const testFromEmail = body.senderEmail || body.username;
-    const testFromName = body.senderName || 'SMTP Test';
-
-    // Send isolated test email bypassing queue/log
-    await this.emailService.sendEmail(
-      body.testRecipient,
-      'Study Metro SMTP Test Email',
-      'This is an isolated test email to verify your SMTP settings. No CommunicationQueue or CommunicationLog records were created.',
-      '<h3>Study Metro SMTP Test Email</h3><p>This is an isolated test email to verify your SMTP settings. No CommunicationQueue or CommunicationLog records were created.</p>',
-      tenantId
-    );
-
-    return { success: true, message: `Test email sent successfully to ${body.testRecipient}` };
+  async deleteEmailTemplate(@Param('id') id: string) {
+    return this.communicationService.deleteEmailTemplate(id);
   }
 
-  @Get('settings/portal')
+  @Post('templates/email/:id/clone')
   @Roles(UserRole.SUPER_ADMIN)
-  async getPortalSettings(@Req() req: AuthenticatedRequest) {
-    const tenantId = req.tenantId || 'studymetro-global';
-    let setting = await this.communicationService['prisma'].portalSetting.findUnique({
-      where: { tenantId },
-    });
-    if (!setting) {
-      setting = await this.communicationService['prisma'].portalSetting.create({
-        data: {
-          tenantId,
-          portalName: 'Study Metro Student Portal',
-          primaryColor: '#3b82f6',
-          secondaryColor: '#1d4ed8',
-          supportEmail: 'support@studymetro.com',
-          supportPhone: '+1-800-555-0199',
-          footerText: '© 2026 Study Metro. All rights reserved.',
-        }
-      });
-    }
-    return setting;
+  async cloneEmailTemplate(@Param('id') id: string) {
+    return this.communicationService.cloneEmailTemplate(id);
   }
 
-  @Post('settings/portal')
+  @Post('templates/email/:id/versions/:versionId/restore')
   @Roles(UserRole.SUPER_ADMIN)
-  async savePortalSettings(@Req() req: AuthenticatedRequest, @Body() body: any) {
+  async restoreEmailTemplateVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
+    return this.communicationService.restoreEmailTemplateVersion(id, versionId);
+  }
+
+  // --- WHATSAPP TEMPLATES CRUD ---
+
+  @Get('templates/whatsapp')
+  async getWhatsappTemplates(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId || 'studymetro-global';
-    return this.communicationService['prisma'].portalSetting.upsert({
-      where: { tenantId },
-      create: {
-        tenantId,
-        portalName: body.portalName || 'Study Metro Student Portal',
-        logo: body.logo || null,
-        primaryColor: body.primaryColor || '#3b82f6',
-        secondaryColor: body.secondaryColor || '#1d4ed8',
-        supportEmail: body.supportEmail || null,
-        supportPhone: body.supportPhone || null,
-        privacyPolicy: body.privacyPolicy || null,
-        termsConditions: body.termsConditions || null,
-        footerText: body.footerText || null,
-        socialLinks: body.socialLinks || {},
-      },
-      update: {
-        portalName: body.portalName,
-        logo: body.logo,
-        primaryColor: body.primaryColor,
-        secondaryColor: body.secondaryColor,
-        supportEmail: body.supportEmail,
-        supportPhone: body.supportPhone,
-        privacyPolicy: body.privacyPolicy,
-        termsConditions: body.termsConditions,
-        footerText: body.footerText,
-        socialLinks: body.socialLinks,
-      },
-    });
+    return this.communicationService.getWhatsappTemplates(tenantId);
   }
 
-  private async prismaFindPassword(tenantId: string): Promise<string> {
-    const { decrypt } = require('../../common/utils/crypto.util');
-    const dbSettings = await this.communicationService.getSettings(tenantId);
-    // Since getSettings masks the password, we query DB directly to get the ciphertext
-    const raw = await this.communicationService['prisma'].emailSetting.findUnique({
-      where: { tenantId }
-    });
-    return raw ? decrypt(raw.password) : '';
+  @Post('templates/whatsapp')
+  @Roles(UserRole.SUPER_ADMIN)
+  async createWhatsappTemplate(@Req() req: AuthenticatedRequest, @Body() body: any) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.createWhatsappTemplate(tenantId, body);
   }
 
-  // --- ENTERPRISE AUTOMATION API ---
+  @Put('templates/whatsapp/:id')
+  @Roles(UserRole.SUPER_ADMIN)
+  async updateWhatsappTemplate(@Param('id') id: string, @Body() body: any) {
+    return this.communicationService.updateWhatsappTemplate(id, body);
+  }
+
+  @Delete('templates/whatsapp/:id')
+  @Roles(UserRole.SUPER_ADMIN)
+  async deleteWhatsappTemplate(@Param('id') id: string) {
+    return this.communicationService.deleteWhatsappTemplate(id);
+  }
+
+  @Post('templates/whatsapp/:id/clone')
+  @Roles(UserRole.SUPER_ADMIN)
+  async cloneWhatsappTemplate(@Param('id') id: string) {
+    return this.communicationService.cloneWhatsappTemplate(id);
+  }
+
+  @Post('templates/whatsapp/:id/versions/:versionId/restore')
+  @Roles(UserRole.SUPER_ADMIN)
+  async restoreWhatsappTemplateVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
+    return this.communicationService.restoreWhatsappTemplateVersion(id, versionId);
+  }
+
+  // --- SMS TEMPLATES CRUD ---
+
+  @Get('templates/sms')
+  async getSmsTemplates(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.getSmsTemplates(tenantId);
+  }
+
+  @Post('templates/sms')
+  @Roles(UserRole.SUPER_ADMIN)
+  async createSmsTemplate(@Req() req: AuthenticatedRequest, @Body() body: any) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.createSmsTemplate(tenantId, body);
+  }
+
+  @Put('templates/sms/:id')
+  @Roles(UserRole.SUPER_ADMIN)
+  async updateSmsTemplate(@Param('id') id: string, @Body() body: any) {
+    return this.communicationService.updateSmsTemplate(id, body);
+  }
+
+  @Delete('templates/sms/:id')
+  @Roles(UserRole.SUPER_ADMIN)
+  async deleteSmsTemplate(@Param('id') id: string) {
+    return this.communicationService.deleteSmsTemplate(id);
+  }
+
+  @Post('templates/sms/:id/clone')
+  @Roles(UserRole.SUPER_ADMIN)
+  async cloneSmsTemplate(@Param('id') id: string) {
+    return this.communicationService.cloneSmsTemplate(id);
+  }
+
+  @Post('templates/sms/:id/versions/:versionId/restore')
+  @Roles(UserRole.SUPER_ADMIN)
+  async restoreSmsTemplateVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
+    return this.communicationService.restoreSmsTemplateVersion(id, versionId);
+  }
+
+  // --- AUTOMATION RULES CRUD ---
 
   @Get('autos')
   async getAutomations(@Req() req: AuthenticatedRequest) {
@@ -247,66 +165,125 @@ export class CommunicationController {
     return this.communicationService.cloneAutomation(id);
   }
 
-  @Post('autos/export')
-  async exportAutomations(@Req() req: AuthenticatedRequest) {
+  // --- SMTP OUTBOUND SETTINGS ---
+
+  @Get('settings')
+  async getSettings(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId || 'studymetro-global';
-    const autos = await this.communicationService.getAutomations(tenantId);
-    return { data: JSON.stringify(autos) };
+    return this.communicationService.getSettings(tenantId);
   }
 
-  @Post('autos/import')
+  @Post('settings')
   @Roles(UserRole.SUPER_ADMIN)
-  async importAutomations(@Req() req: AuthenticatedRequest, @Body() body: { payload: string }) {
+  async saveSettings(@Req() req: AuthenticatedRequest, @Body() body: any) {
     const tenantId = req.tenantId || 'studymetro-global';
-    try {
-      const list = JSON.parse(body.payload);
-      for (const item of list) {
-        await this.communicationService.saveAutomation(tenantId, item);
-      }
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    return this.communicationService.saveSettings(tenantId, body);
+  }
+
+  @Post('settings/test-connection')
+  @Roles(UserRole.SUPER_ADMIN)
+  async testConnection(@Req() req: AuthenticatedRequest, @Body() body: any) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    let passwordToTest = body.password;
+    if (passwordToTest === '********') {
+      const raw = await this.communicationService['prisma'].emailSetting.findUnique({
+        where: { tenantId }
+      });
+      const { decrypt } = require('../../common/utils/crypto.util');
+      passwordToTest = raw ? decrypt(raw.password) : '';
     }
+
+    await this.emailService.testConnection({
+      host: body.host,
+      port: Number(body.port),
+      username: body.username,
+      password: passwordToTest,
+      encryption: body.encryption
+    });
+
+    return { success: true, message: 'SMTP connection verified successfully' };
   }
 
-  // --- TEMPLATES ---
-
-  @Get('auto-templates')
-  async getAutomationTemplates(@Req() req: AuthenticatedRequest) {
-    const tenantId = req.tenantId || 'studymetro-global';
-    return this.communicationService.getAutomationTemplates(tenantId);
-  }
-
-  @Post('auto-templates')
+  @Post('settings/test-email')
   @Roles(UserRole.SUPER_ADMIN)
-  async createAutomationTemplate(@Req() req: AuthenticatedRequest, @Body() body: any) {
+  async sendTestEmail(@Req() req: AuthenticatedRequest, @Body() body: any) {
     const tenantId = req.tenantId || 'studymetro-global';
-    return this.communicationService.createAutomationTemplate(tenantId, body);
+    await this.emailService.sendEmail(
+      body.testRecipient,
+      'Study Metro SMTP Test Email',
+      'This is an isolated test email to verify your SMTP settings.',
+      '<h3>Study Metro SMTP Test Email</h3><p>This is an isolated test email to verify your SMTP settings.</p>',
+      tenantId
+    );
+    return { success: true, message: `Test email sent successfully to ${body.testRecipient}` };
   }
 
-  @Patch('auto-templates/:id')
+  // --- TEST SEND WITHOUT LEAD ---
+
+  @Post('test-send')
   @Roles(UserRole.SUPER_ADMIN)
-  async updateAutomationTemplate(@Param('id') id: string, @Body() body: any) {
-    return this.communicationService.updateAutomationTemplate(id, body);
-  }
-
-  @Post('auto-templates/:id/versions/:versionId/restore')
-  @Roles(UserRole.SUPER_ADMIN)
-  async restoreTemplateVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
-    return this.communicationService.restoreTemplateVersion(id, versionId);
-  }
-
-  // --- LOGS & ANALYTICS ---
-
-  @Get('auto-logs')
-  async getAutomationLogs(@Req() req: AuthenticatedRequest) {
+  async testSend(@Req() req: AuthenticatedRequest, @Body() body: any) {
     const tenantId = req.tenantId || 'studymetro-global';
-    return this.communicationService.getAutomationLogs(tenantId);
+    const { channel, recipient, subject, message } = body;
+
+    if (channel === 'EMAIL') {
+      await this.emailService.sendEmail(
+        recipient,
+        subject || 'Test Email Dispatch',
+        message,
+        message.replace(/\n/g, '<br/>'),
+        tenantId
+      );
+      return { success: true, message: `Test email dispatched to ${recipient}` };
+    } else if (channel === 'WHATSAPP') {
+      const { WhatsappQueueService } = require('../whatsapp/queue/whatsapp.queue');
+      const instance = await this.communicationService['prisma'].whatsappInstance.findFirst({
+        where: { tenantId, status: 'CONNECTED' }
+      });
+      if (instance && WhatsappQueueService.instance) {
+        const dbMsg = await this.communicationService['prisma'].whatsappMessage.create({
+          data: {
+            leadId: '', // Direct test, no lead
+            instanceId: instance.id,
+            direction: 'OUTBOUND',
+            messageType: 'TEXT',
+            messageId: `msg-direct-test-${Date.now()}`,
+            body: message,
+            status: 'PENDING'
+          }
+        });
+        await WhatsappQueueService.instance.enqueueMessage(instance.id, recipient, { text: message }, dbMsg.id);
+        return { success: true, message: `Test WhatsApp enqueued to ${recipient}` };
+      } else {
+        throw new Error('No connected WhatsApp gateway socket available.');
+      }
+    }
+    throw new Error('Unsupported channel for test send');
   }
 
-  @Get('auto-analytics')
-  async getAutomationAnalytics(@Req() req: AuthenticatedRequest) {
+  // --- LOGS & STATS ---
+
+  @Get('logs')
+  async getLogs(@Query('leadId') leadId?: string) {
+    return this.communicationService.getLogs(leadId);
+  }
+
+  @Get('dashboard/stats')
+  async getDashboardStats() {
+    return this.communicationService.getDashboardStats();
+  }
+
+  @Post('trigger-manual')
+  async triggerManual(
+    @Body() body: { leadId: string; triggerName: string }
+  ) {
+    return this.communicationService.triggerEvent(body.triggerName, body.leadId, { bypassDuplicateCheck: true });
+  }
+
+  @Post('seed-defaults')
+  async seedDefaults(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId || 'studymetro-global';
-    return this.communicationService.getAutomationAnalytics(tenantId);
+    await this.communicationService.seedTenantDefaults(tenantId);
+    return { success: true };
   }
 }

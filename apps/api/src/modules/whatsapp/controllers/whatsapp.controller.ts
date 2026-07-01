@@ -80,15 +80,17 @@ export class WhatsappController {
   @Post('templates')
   async createTemplate(
     @Req() req: AuthenticatedRequest,
-    @Body() body: { name: string; message: string; variables: string[] }
+    @Body() body: { name: string; message: string; variables?: string[] }
   ) {
     const tenantId = req.tenantId || 'studymetro-global';
     return this.prisma.whatsappTemplate.create({
       data: {
         tenantId,
         name: body.name,
+        body: body.message,
         message: body.message,
-        variables: body.variables,
+        category: 'Custom',
+        isActive: true
       },
     });
   }
@@ -97,10 +99,21 @@ export class WhatsappController {
   @Get('automations')
   async getAutomations(@Req() req: AuthenticatedRequest) {
     const tenantId = req.tenantId || 'studymetro-global';
-    return this.prisma.whatsappAutomation.findMany({
-      where: { tenantId },
-      include: { template: true },
+    const rules = await this.prisma.automationRule.findMany({
+      where: { tenantId, channel: 'WHATSAPP' },
+      include: { whatsappTemplate: true },
     });
+    // Map to WhatsappAutomation format
+    return rules.map(r => ({
+      id: r.id,
+      tenantId: r.tenantId,
+      trigger: r.trigger,
+      templateId: r.whatsappTemplateId,
+      template: r.whatsappTemplate,
+      enabled: r.enabled,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
   }
 
   @Post('automations')
@@ -109,11 +122,13 @@ export class WhatsappController {
     @Body() body: { trigger: string; templateId: string; enabled: boolean }
   ) {
     const tenantId = req.tenantId || 'studymetro-global';
-    return this.prisma.whatsappAutomation.create({
+    return this.prisma.automationRule.create({
       data: {
         tenantId,
+        name: `WhatsApp Automation Rule ${body.trigger}`,
         trigger: body.trigger,
-        templateId: body.templateId,
+        channel: 'WHATSAPP',
+        whatsappTemplateId: body.templateId,
         enabled: body.enabled,
       },
     });
@@ -126,17 +141,14 @@ export class WhatsappController {
       {
         name: 'Welcome Template',
         message: 'Hello {{name}}, welcome to Study Metro! We received your registration. Your Lead Number is {{leadNumber}}.',
-        variables: ['name', 'leadNumber']
       },
       {
         name: 'Document Pending Template',
         message: 'Hello {{name}}, some documents are still pending for your application. Please upload them as soon as possible.',
-        variables: ['name']
       },
       {
         name: 'Followup Reminder Template',
         message: 'Hello {{name}}, this is a reminder for your upcoming counselling session scheduled for {{followupDate}}.',
-        variables: ['name', 'followupDate']
       }
     ];
 
@@ -151,8 +163,9 @@ export class WhatsappController {
           data: {
             tenantId,
             name: t.name,
+            body: t.message,
             message: t.message,
-            variables: t.variables,
+            category: 'Custom',
             isActive: true
           }
         });
@@ -167,15 +180,17 @@ export class WhatsappController {
     ];
 
     for (const auto of automationsToSeed) {
-      const existingAuto = await this.prisma.whatsappAutomation.findFirst({
-        where: { tenantId, trigger: auto.trigger }
+      const existingAuto = await this.prisma.automationRule.findFirst({
+        where: { tenantId, trigger: auto.trigger, channel: 'WHATSAPP' }
       });
       if (!existingAuto) {
-        await this.prisma.whatsappAutomation.create({
+        await this.prisma.automationRule.create({
           data: {
             tenantId,
+            name: `WhatsApp Automation Rule ${auto.trigger}`,
             trigger: auto.trigger,
-            templateId: templateMap[auto.templateName],
+            channel: 'WHATSAPP',
+            whatsappTemplateId: templateMap[auto.templateName],
             enabled: true
           }
         });

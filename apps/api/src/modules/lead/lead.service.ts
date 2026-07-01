@@ -204,6 +204,41 @@ export class LeadService {
         }
       });
 
+      // Find and assign active brochure if matches category
+      const brochure = await this.prisma.brochure.findFirst({
+        where: { category: updated.leadCategory, isActive: true },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (brochure) {
+        const token = crypto.randomBytes(24).toString('hex');
+        await this.prisma.brochureAssignment.create({
+          data: {
+            leadId: updated.id,
+            brochureId: brochure.id,
+            token,
+            tracking: {
+              create: {
+                opened: false,
+                readingTime: 0,
+                pageViews: 0,
+                completionPercentage: 0,
+                lastPageViewed: 0,
+                downloadCount: 0,
+                viewedPages: '',
+                engagementScore: 0,
+              },
+            },
+          },
+        });
+      }
+
+      try {
+        await this.communicationService.triggerEvent('LEAD_CREATED', updated.id);
+      } catch (err: any) {
+        console.error('[CommunicationAutomation] LeadService duplicate trigger error for LEAD_CREATED:', err.message);
+      }
+
       return updated;
     }
 
