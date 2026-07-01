@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '../../../lib/api';
+import io from 'socket.io-client';
+import QRCode from 'qrcode';
 
 export default function CommunicationSettingsPage() {
   const [host, setHost] = useState('');
@@ -394,8 +396,17 @@ export default function CommunicationSettingsPage() {
             </div>
           </div>
 
+          {/* Dedicated WhatsApp Integration Section */}
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '16px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 4px 0' }}>💬 WhatsApp Gateway Integration</h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Connect self-hosted instances on your VPS using Baileys. Scan QR code to authenticate.
+            </p>
+            <WhatsappIntegrationSection addToast={addToast} />
+          </div>
+
           {/* Student Portal Settings */}
-          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '8px' }}>
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '16px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px 0' }}>Student Portal Identity Management</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -599,6 +610,282 @@ export default function CommunicationSettingsPage() {
         ))}
       </div>
 
+    </div>
+  );
+}
+
+function WhatsappIntegrationSection({ addToast }: { addToast: (type: 'success' | 'error', message: string) => void }) {
+  const [instances, setInstances] = useState<any[]>([]);
+  const [newInstanceName, setNewInstanceName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [qrCodeMap, setQrCodeMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetchInstances();
+
+    const socket = io('/whatsapp', {
+      transports: ['websocket'],
+      query: { tenantId: 'studymetro-global' },
+    });
+
+    socket.on('whatsapp_status', (data: { instanceId: string; status: string; qr?: string; phoneNumber?: string; displayName?: string }) => {
+      setInstances((prev) =>
+        prev.map((inst) => {
+          if (inst.id === data.instanceId) {
+            return {
+              ...inst,
+              status: data.status,
+              phoneNumber: data.phoneNumber !== undefined ? data.phoneNumber : inst.phoneNumber,
+              displayName: data.displayName !== undefined ? data.displayName : inst.displayName,
+            };
+          }
+          return inst;
+        })
+      );
+
+      if (data.qr) {
+        setQrCodeMap((prev) => ({ ...prev, [data.instanceId]: data.qr! }));
+      } else if (data.status === 'CONNECTED' || data.status === 'DISCONNECTED') {
+        setQrCodeMap((prev) => {
+          const next = { ...prev };
+          delete next[data.instanceId];
+          return next;
+        });
+      }
+    });
+
+    // Auto refresh every 5 seconds until connection becomes open
+    const pollInterval = setInterval(() => {
+      console.log("Polling instance statuses...");
+      fetchInstancesSilently();
+    }, 5000);
+
+    return () => {
+      socket.disconnect();
+      clearInterval(pollInterval);
+    };
+  }, []);
+
+  const fetchInstancesSilently = async () => {
+    try {
+      const res = await api.get('/api/v1/whatsapp/instances');
+      setInstances(res || []);
+    } catch (err) {
+      console.error("Status polling failed", err);
+    }
+  };
+
+  const fetchInstances = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/api/v1/whatsapp/instances');
+      setInstances(res || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateInstance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!newInstanceName.trim()) return;
+    
+    console.log('Connect Button Clicked. Name:', newInstanceName);
+    console.log('Sending request to POST /api/v1/whatsapp/connect...');
+    
+    try {
+      const res = await api.post('/api/v1/whatsapp/connect', { instanceName: newInstanceName });
+      console.log('Response received from connect API. Result:', res);
+      console.log('Instance ID:', res?.id);
+      
+      setInstances((prev) => [...prev, res]);
+      setNewInstanceName('');
+      addToast('success', 'Instance registered. Connection initializing...');
+      
+      // Start polling status immediately or socket connection is handling it
+      fetchInstances();
+    } catch (err: any) {
+      console.error('Error connecting WhatsApp instance:', err);
+      addToast('error', err.message || 'Failed to register instance');
+    }
+  };
+
+  const handleLogout = async (id: string) => {
+    try {
+      console.log('Logging out instance ID:', id);
+      await api.post(`/api/v1/whatsapp/logout/${id}`);
+      addToast('success', 'Instance disconnected and session deleted.');
+      fetchInstances();
+    } catch (err: any) {
+      console.error('Logout error:', err);
+      addToast('error', err.message || 'Logout failed');
+    }
+  };
+
+  const handleReconnect = async (id: string, name: string) => {
+    try {
+      console.log('Reconnecting instance ID:', id, 'Name:', name);
+      await api.post('/api/v1/whatsapp/connect', { instanceName: name });
+      addToast('success', 'Reconnection initialized.');
+    } catch (err: any) {
+      console.error('Reconnect error:', err);
+      addToast('error', err.message || 'Reconnection failed');
+    }
+  };
+
+  if (loading) return <div style={{ fontSize: '12px' }}>Loading WhatsApp instances...</div>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <input
+          type="text"
+          className="form-control"
+          placeholder="Friendly instance name (e.g. Dubai Support)"
+          value={newInstanceName}
+          onChange={(e) => setNewInstanceName(e.target.value)}
+          required
+        />
+        <button
+          type="button"
+          onClick={(e) => handleCreateInstance(e as any)}
+          className="btn btn-primary"
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          Connect
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {instances.map((inst) => {
+          const isConnected = inst.status === 'CONNECTED';
+          return (
+            <div key={inst.id} style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '8px', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    background: '#e2e8f0',
+                    backgroundImage: inst.profilePicture ? `url(${inst.profilePicture})` : 'none',
+                    backgroundSize: 'cover',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px'
+                  }}>
+                    {!inst.profilePicture && '📱'}
+                  </div>
+                  <div>
+                    <strong style={{ fontSize: '14px' }}>{inst.instanceName}</strong>
+                    <div style={{ fontSize: '12px', color: isConnected ? '#10b981' : '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                      <span>{isConnected ? '🟢 Connected' : `⚪ ${inst.status}`}</span>
+                      {inst.displayName && <span>• {inst.displayName}</span>}
+                    </div>
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {!isConnected && (
+                    <button type="button" className="btn btn-xs" onClick={async () => {
+                      console.log("Requesting QR code fallback for instance ID:", inst.id);
+                      try {
+                        const res = await api.get(`/api/v1/whatsapp/qr/${inst.id}`);
+                        console.log("QR received via fallback API:", res);
+                        if (res?.qr) {
+                          setQrCodeMap(prev => ({ ...prev, [inst.id]: res.qr }));
+                        } else {
+                          addToast('error', 'No QR generated yet. Try again in a moment.');
+                        }
+                      } catch (err: any) {
+                        addToast('error', err.message || 'Failed to fetch QR');
+                      }
+                    }}>
+                      📸 Generate / Scan QR
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-xs" onClick={() => handleReconnect(inst.id, inst.instanceName)}>
+                    Reconnect
+                  </button>
+                  <button type="button" className="btn btn-xs btn-danger" onClick={() => handleLogout(inst.id)}>
+                    Logout / Delete
+                  </button>
+                </div>
+              </div>
+
+              {/* Show details for connected device */}
+              {isConnected && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
+                  <div><strong>Phone Number:</strong> {inst.phoneNumber ? `+${inst.phoneNumber}` : 'Unassigned'}</div>
+                  <div><strong>Display Name:</strong> {inst.displayName || 'Support Bot'}</div>
+                  <div><strong>Connection Time:</strong> {inst.connectedAt ? new Date(inst.connectedAt).toLocaleString() : 'Just Now'}</div>
+                  <div><strong>Last Sync:</strong> {inst.updatedAt ? new Date(inst.updatedAt).toLocaleString() : 'Never'}</div>
+                </div>
+              )}
+
+              {/* Hide QR component automatically if active connection becomes connected */}
+              {!isConnected && qrCodeMap[inst.id] && (
+                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>Scan device linkage QR code:</div>
+                  <div style={{ padding: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', justifyContent: 'center' }}>
+                    <QRCodeRenderer text={qrCodeMap[inst.id]} />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function QRCodeRenderer({ text }: { text: string }) {
+  const [imgUrl, setImgUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (!text) return;
+    QRCode.toDataURL(text, { width: 260, margin: 2 }, (err, url) => {
+      if (err) {
+        console.error("Failed to generate QR data URL:", err);
+        return;
+      }
+      setImgUrl(url);
+    });
+  }, [text]);
+
+  const handleDownload = () => {
+    if (!imgUrl) return;
+    const link = document.createElement('a');
+    link.href = imgUrl;
+    link.download = 'whatsapp-connect-qr.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  if (!imgUrl) {
+    return <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Generating QR Canvas...</span>;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '16px', background: '#fff', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+      <img
+        src={imgUrl}
+        alt="WhatsApp Scan QR"
+        style={{ width: '260px', height: '260px', display: 'block' }}
+      />
+      <button
+        type="button"
+        className="btn btn-xs btn-outline"
+        onClick={handleDownload}
+        style={{ width: '100%' }}
+      >
+        📥 Download QR
+      </button>
     </div>
   );
 }

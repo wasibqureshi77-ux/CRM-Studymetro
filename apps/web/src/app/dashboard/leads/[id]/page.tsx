@@ -70,7 +70,7 @@ export default function LeadDetailPage() {
   const [loading, setLoading] = useState(true);
 
   // Form states
-  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups' | 'applications' | 'communications' | 'brochures' | 'sessions'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'notes' | 'documents' | 'followups' | 'applications' | 'communications' | 'whatsapp' | 'brochures' | 'sessions'>('timeline');
   const [commLogs, setCommLogs] = useState<any[]>([]);
   const [brochuresList, setBrochuresList] = useState<any[]>([]);
   const [brochureAssignments, setBrochureAssignments] = useState<any[]>([]);
@@ -83,6 +83,11 @@ export default function LeadDetailPage() {
 
   // Note State
   const [noteContent, setNoteContent] = useState('');
+
+  // WhatsApp States
+  const [whatsappText, setWhatsappText] = useState('');
+  const [whatsappMedia, setWhatsappMedia] = useState('');
+  const [whatsappHistory, setWhatsappHistory] = useState<any[]>([]);
 
   // Followup State
   const [followupDate, setFollowupDate] = useState('');
@@ -222,6 +227,16 @@ export default function LeadDetailPage() {
       setCommLogs(res || []);
     } catch (err) {
       console.error('Failed to load communication logs', err);
+    }
+  };
+
+  const handleWhatsappTabClick = async () => {
+    setActiveTab('whatsapp');
+    try {
+      const res = await api.get(`/api/v1/whatsapp/history/${id}`);
+      setWhatsappHistory(res || []);
+    } catch (err) {
+      console.error('Failed to fetch WhatsApp history', err);
     }
   };
 
@@ -1388,6 +1403,12 @@ export default function LeadDetailPage() {
             💬 Communications ({commLogs.length})
           </button>
           <button
+            className={`tab-btn ${activeTab === 'whatsapp' ? 'active' : ''}`}
+            onClick={handleWhatsappTabClick}
+          >
+            🟢 WhatsApp Chat
+          </button>
+          <button
             className={`tab-btn ${activeTab === 'brochures' ? 'active' : ''}`}
             onClick={() => setActiveTab('brochures')}
           >
@@ -1402,6 +1423,119 @@ export default function LeadDetailPage() {
         </div>
 
         <div className="tab-content">
+          {/* Tab: WhatsApp Chat */}
+          {activeTab === 'whatsapp' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>🟢 WhatsApp Chat Live Timeline</h3>
+                <button
+                  type="button"
+                  className="btn btn-xs btn-outline"
+                  onClick={handleWhatsappTabClick}
+                >
+                  🔄 Sync Chat
+                </button>
+              </div>
+
+              {/* Chat Messages Log */}
+              <div style={{
+                maxHeight: '300px',
+                overflowY: 'auto',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                padding: '12px',
+                backgroundColor: '#f8fafc',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {whatsappHistory.length === 0 ? (
+                  <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px', fontStyle: 'italic', margin: '20px 0' }}>
+                    No messages recorded. Send your first message below.
+                  </p>
+                ) : (
+                  whatsappHistory.map((wMsg: any) => {
+                    const isOut = wMsg.direction === 'OUTBOUND';
+                    return (
+                      <div
+                        key={wMsg.id}
+                        style={{
+                          alignSelf: isOut ? 'flex-end' : 'flex-start',
+                          backgroundColor: isOut ? '#dcfce7' : '#fff',
+                          color: '#1e293b',
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          maxWidth: '80%',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                          border: isOut ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                        }}
+                      >
+                        <div style={{ fontSize: '12px', whiteSpace: 'pre-wrap' }}>{wMsg.body}</div>
+                        {wMsg.mediaUrl && (
+                          <div style={{ marginTop: '4px', fontSize: '10px' }}>
+                            📁 <a href={wMsg.mediaUrl} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>View Media</a>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px', alignItems: 'center', fontSize: '9px', color: '#64748b', marginTop: '4px' }}>
+                          <span>{new Date(wMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          {isOut && (
+                            <span title={wMsg.status}>
+                              {wMsg.status === 'READ' ? '🔵' : wMsg.status === 'DELIVERED' ? '✓✓' : wMsg.status === 'SENT' ? '✓' : '⏳'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Chat Input form */}
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!whatsappText.trim() && !whatsappMedia) return;
+                  try {
+                    await api.post('/api/v1/whatsapp/send', {
+                      leadId: id,
+                      message: whatsappText,
+                      mediaUrl: whatsappMedia || undefined,
+                      fileName: whatsappMedia ? 'Attachment' : undefined,
+                    });
+                    setWhatsappText('');
+                    setWhatsappMedia('');
+                    addToast('success', 'Message queued in BullMQ outbox!');
+                    handleWhatsappTabClick();
+                  } catch (err: any) {
+                    addToast('error', err.message || 'Failed to dispatch WhatsApp');
+                  }
+                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+              >
+                <textarea
+                  className="form-control"
+                  rows={2}
+                  placeholder="Type WhatsApp message..."
+                  value={whatsappText}
+                  onChange={(e) => setWhatsappText(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Attachment URL (optional)"
+                    value={whatsappMedia}
+                    onChange={(e) => setWhatsappMedia(e.target.value)}
+                    style={{ flex: 1, padding: '4px 8px', fontSize: '12px' }}
+                  />
+                  <button type="submit" className="btn btn-primary" style={{ padding: '6px 12px' }}>
+                    Send Live 📤
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
           {/* Tab 1: Timeline */}
           {activeTab === 'timeline' && (
             <div className="timeline-list">

@@ -13,6 +13,7 @@ import { CommunicationModule } from './modules/communication/communication.modul
 import { BrochureModule } from './modules/brochure/brochure.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { StudentPortalModule } from './modules/student-portal/student-portal.module';
+import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { APP_GUARD } from '@nestjs/core';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -34,6 +35,7 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     BrochureModule,
     AnalyticsModule,
     StudentPortalModule,
+    WhatsappModule,
   ],
   providers: [
     {

@@ -120,6 +120,9 @@ model Tenant {
   visitors     Visitor[]
   emailSetting EmailSetting?
   portalSetting PortalSetting?
+  whatsappInstances WhatsappInstance[]
+  whatsappTemplates WhatsappTemplate[]
+  whatsappAutomations WhatsappAutomation[]
 }
 
 model Branch {
@@ -228,6 +231,7 @@ model Lead {
   engagementLabel     String              @default("Cold")
   studentSessions      StudentSession[]
   studentNotifications StudentNotification[]
+  whatsappMessages     WhatsappMessage[]
 
 
   @@index([tenantId])
@@ -651,5 +655,78 @@ model PortalSetting {
   socialLinks     Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model WhatsappInstance {
+  id               String   @id @default(uuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  instanceName     String
+  phoneNumber      String?
+  displayName      String?
+  profilePicture   String?
+  status           String   @default("DISCONNECTED") // CONNECTED, DISCONNECTED, CONNECTING, QR_PENDING
+  connectedAt      DateTime?
+  lastSeen         DateTime?
+  sessionEncrypted String?  @db.Text // Encrypted authentication state JSON
+  sessionVersion   Int      @default(1)
+  lastSync         DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  messages         WhatsappMessage[]
+
+  @@index([tenantId])
+}
+
+model WhatsappMessage {
+  id           String    @id @default(uuid())
+  leadId       String?
+  lead         Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  instanceId   String
+  instance     WhatsappInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  direction    String    // INBOUND or OUTBOUND
+  messageType  String    // TEXT, IMAGE, PDF, DOCUMENT, etc.
+  messageId    String    @unique
+  body         String    @db.Text
+  mediaUrl     String?
+  status       String    @default("PENDING") // PENDING, SENT, DELIVERED, READ, FAILED
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  failedReason String?
+  createdAt    DateTime  @default(now())
+
+  @@index([leadId])
+  @@index([instanceId])
+}
+
+model WhatsappTemplate {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  message   String   @db.Text
+  variables String[] // Array of placeholder variables e.g., ["name", "course"]
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  automations WhatsappAutomation[]
+
+  @@index([tenantId])
+}
+
+model WhatsappAutomation {
+  id         String           @id @default(uuid())
+  tenantId   String
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trigger    String           // LEAD_CREATED, LEAD_ASSIGNED, FOLLOWUP_CREATED, DOCUMENTS_PENDING, DOCUMENTS_APPROVED, APPLICATION_SUBMITTED, OFFER_RECEIVED, VISA_APPROVED, PAYMENT_REMINDER, STUDENT_ENROLLED
+  templateId String
+  template   WhatsappTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  enabled    Boolean          @default(true)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([tenantId])
 }
 

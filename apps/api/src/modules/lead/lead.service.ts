@@ -350,6 +350,66 @@ export class LeadService {
       'LeadService'
     );
 
+    // Auto-trigger WhatsApp automation if any exists for LEAD_CREATED
+    try {
+      const automation = await this.prisma.whatsappAutomation.findFirst({
+        where: { tenantId, trigger: 'LEAD_CREATED', enabled: true },
+        include: { template: true },
+      });
+      if (automation && automation.template) {
+        const instance = await this.prisma.whatsappInstance.findFirst({
+          where: { tenantId, status: 'CONNECTED' },
+        });
+        if (instance) {
+          let body = automation.template.message;
+          const variablesMap = {
+            name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+            leadNumber: lead.leadNumber || '',
+          };
+          for (const key of Object.keys(variablesMap)) {
+            body = body.replace(new RegExp(`{{${key}}}`, 'g'), variablesMap[key as keyof typeof variablesMap]);
+          }
+          const messageId = `msg-auto-${Date.now()}`;
+          const dbMsg = await this.prisma.whatsappMessage.create({
+            data: {
+              leadId: lead.id,
+              instanceId: instance.id,
+              direction: 'OUTBOUND',
+              messageType: 'TEXT',
+              messageId,
+              body,
+              status: 'PENDING',
+            },
+          });
+
+          // Inline import queue to avoid circular dependency
+          const { Queue } = require('bullmq');
+          const myQueue = new Queue('whatsapp-outbox', {
+            connection: {
+              host: process.env.REDIS_HOST || '127.0.0.1',
+              port: parseInt(process.env.REDIS_PORT || '6379'),
+            },
+          });
+          myQueue.on('error', (err: any) => {
+            console.error('BullMQ dynamic queue error: Redis connection refused');
+          });
+          await myQueue.add('send-msg', {
+            messageId: dbMsg.id,
+            to: lead.phone,
+            content: { text: body },
+            instanceId: instance.id,
+          }, {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 2000 },
+          }).catch((err: any) => {
+            console.error('Failed to add job to dynamic queue:', err.message);
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to trigger WhatsApp Lead Created automation:', err);
+    }
+
     return lead;
   }
 

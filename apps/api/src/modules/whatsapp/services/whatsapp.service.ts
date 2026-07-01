@@ -1,0 +1,146 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { WhatsappQueueService } from '../queue/whatsapp.queue';
+import { WhatsappGatewayService } from '../gateway/whatsapp.gateway';
+
+@Injectable()
+export class WhatsappService {
+  private readonly logger = new Logger(WhatsappService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly queue: WhatsappQueueService,
+    private readonly gateway: WhatsappGatewayService
+  ) {}
+
+  getGatewayService() {
+    return this.gateway;
+  }
+
+  async connect(tenantId: string, instanceName: string) {
+    console.log("Creating WhatsApp instance");
+    let instance = await this.prisma.whatsappInstance.findFirst({
+      where: { tenantId, instanceName },
+    });
+
+    if (!instance) {
+      instance = await this.prisma.whatsappInstance.create({
+        data: {
+          tenantId,
+          instanceName,
+          status: 'DISCONNECTED',
+        },
+      });
+    }
+
+    // Connect asynchronously
+    this.gateway.connectInstance(instance.id, tenantId).catch((err) => {
+      this.logger.error(`Error connecting instance ${instance.id}: ${err.message}`);
+    });
+
+    return instance;
+  }
+
+  async getStatus(id: string) {
+    const inst = await this.prisma.whatsappInstance.findUnique({
+      where: { id },
+    });
+    return inst ? inst.status : 'DISCONNECTED';
+  }
+
+  async getQR(id: string) {
+    // Return connection/instance details
+    return this.prisma.whatsappInstance.findUnique({
+      where: { id },
+      select: { id: true, status: true, phoneNumber: true, displayName: true },
+    });
+  }
+
+  async logout(id: string, tenantId: string) {
+    await this.gateway.logoutInstance(id, tenantId);
+    return { success: true };
+  }
+
+  async sendTemplateMessage(tenantId: string, leadId: string, templateId: string, variablesMap: Record<string, string>) {
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    const template = await this.prisma.whatsappTemplate.findUnique({ where: { id: templateId } });
+    const instance = await this.prisma.whatsappInstance.findFirst({
+      where: { tenantId, status: 'CONNECTED' },
+    });
+
+    if (!lead || !template || !instance) {
+      throw new Error('Required Lead, Template or Connected Instance missing');
+    }
+
+    let body = template.message;
+    for (const key of Object.keys(variablesMap)) {
+      body = body.replace(new RegExp(`{{${key}}}`, 'g'), variablesMap[key]);
+    }
+
+    const dbMsg = await this.prisma.whatsappMessage.create({
+      data: {
+        leadId,
+        instanceId: instance.id,
+        direction: 'OUTBOUND',
+        messageType: 'TEXT',
+        messageId: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        body,
+        status: 'PENDING',
+      },
+    });
+
+    await this.queue.enqueueMessage(instance.id, lead.phone, { text: body }, dbMsg.id);
+    return dbMsg;
+  }
+
+  async sendManualMessage(tenantId: string, leadId: string, body: string, mediaUrl?: string, fileName?: string) {
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    const instance = await this.prisma.whatsappInstance.findFirst({
+      where: { tenantId, status: 'CONNECTED' },
+    });
+
+    if (!lead || !instance) {
+      throw new Error('No connected WhatsApp instance found for tenant.');
+    }
+
+    const type = mediaUrl ? (mediaUrl.endsWith('.pdf') ? 'PDF' : 'IMAGE') : 'TEXT';
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const dbMsg = await this.prisma.whatsappMessage.create({
+      data: {
+        leadId,
+        instanceId: instance.id,
+        direction: 'OUTBOUND',
+        messageType: type,
+        messageId,
+        body: body || (type === 'TEXT' ? '' : `Sent ${type}`),
+        mediaUrl,
+        status: 'PENDING',
+      },
+    });
+
+    let sendContent: any = { text: body };
+    if (mediaUrl) {
+      if (type === 'PDF') {
+        sendContent = { document: { url: mediaUrl }, fileName: fileName || 'Document.pdf', mimetype: 'application/pdf', caption: body };
+      } else {
+        sendContent = { image: { url: mediaUrl }, caption: body };
+      }
+    }
+
+    await this.queue.enqueueMessage(instance.id, lead.phone, sendContent, dbMsg.id);
+    return dbMsg;
+  }
+
+  // Automations trigger engine
+  async triggerAutomation(tenantId: string, leadId: string, eventTrigger: string, context: Record<string, string>) {
+    const auto = await this.prisma.whatsappAutomation.findFirst({
+      where: { tenantId, trigger: eventTrigger, enabled: true },
+      include: { template: true },
+    });
+
+    if (auto) {
+      await this.sendTemplateMessage(tenantId, leadId, auto.templateId, context);
+    }
+  }
+}
