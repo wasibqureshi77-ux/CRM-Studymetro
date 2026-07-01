@@ -216,6 +216,17 @@ export class CommunicationController {
       tenantId
     );
     return { success: true, message: `Test email sent successfully to ${body.testRecipient}` };
+  }  @Get('settings/portal')
+  async getPortalSettings(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.getPortalSettings(tenantId);
+  }
+
+  @Post('settings/portal')
+  @Roles(UserRole.SUPER_ADMIN)
+  async savePortalSettings(@Req() req: AuthenticatedRequest, @Body() body: any) {
+    const tenantId = req.tenantId || 'studymetro-global';
+    return this.communicationService.savePortalSettings(tenantId, body);
   }
 
   // --- TEST SEND WITHOUT LEAD ---

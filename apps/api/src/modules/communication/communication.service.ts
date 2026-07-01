@@ -979,6 +979,53 @@ export class CommunicationService implements OnModuleInit {
       successRate: total > 0 ? Math.round((sent / total) * 100) : 100,
       failRate: total > 0 ? Math.round((failed / total) * 100) : 0
     };
+  }  async getPortalSettings(tenantId: string) {
+    let settings = await this.prisma.portalSetting.findUnique({
+      where: { tenantId }
+    });
+    if (!settings) {
+      settings = await this.prisma.portalSetting.create({
+        data: {
+          tenantId,
+          portalName: 'Student Portal',
+          primaryColor: '#3b82f6',
+          secondaryColor: '#1d4ed8',
+          socialLinks: {}
+        }
+      });
+    }
+    return settings;
+  }
+
+  async savePortalSettings(tenantId: string, data: any) {
+    return this.prisma.portalSetting.upsert({
+      where: { tenantId },
+      update: {
+        portalName: data.portalName,
+        logo: data.logo,
+        primaryColor: data.primaryColor,
+        secondaryColor: data.secondaryColor,
+        supportEmail: data.supportEmail,
+        supportPhone: data.supportPhone,
+        privacyPolicy: data.privacyPolicy,
+        termsConditions: data.termsConditions,
+        footerText: data.footerText,
+        socialLinks: data.socialLinks || {}
+      },
+      create: {
+        tenantId,
+        portalName: data.portalName,
+        logo: data.logo,
+        primaryColor: data.primaryColor,
+        secondaryColor: data.secondaryColor,
+        supportEmail: data.supportEmail,
+        supportPhone: data.supportPhone,
+        privacyPolicy: data.privacyPolicy,
+        termsConditions: data.termsConditions,
+        footerText: data.footerText,
+        socialLinks: data.socialLinks || {}
+      }
+    });
   }
 
   // --- COMPATIBILITY STUBS & RETRY LOOPS ---
