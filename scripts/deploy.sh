@@ -5,6 +5,10 @@ echo "🚀 Starting CRM-Studymetro Remote VPS Deployment..."
 
 cd /var/www/CRM-Studymetro
 
+git stash 
+
+git reset --hard main
+
 echo "📥 Pulling latest code changes from origin/main..."
 git pull origin main
 
